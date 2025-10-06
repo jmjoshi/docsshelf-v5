@@ -1,0 +1,736 @@
+/**
+ * TOTP (Time-based One-Time Password) Setup Screen
+ * Allows users to configure TOTP authentication using authenticator apps
+ */
+
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  Alert,
+  Clipboard,
+  Dimensions,
+} from 'react-native';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import QRCode from 'react-native-qrcode-svg';
+import * as Progress from 'react-native-progress';
+
+import { totpSetupSchema, type TOTPSetupFormData } from '@/utils/validation';
+import AuthService from '@/services/auth/AuthService';
+
+const { width: screenWidth } = Dimensions.get('window');
+
+interface TOTPSetupScreenProps {
+  userId: string;
+  onComplete: () => void;
+  onSkip?: () => void;
+}
+
+export const TOTPSetupScreen: React.FC<TOTPSetupScreenProps> = ({
+  userId,
+  onComplete,
+  onSkip,
+}) => {
+  const [currentStep, setCurrentStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [totpSecret, setTotpSecret] = useState('');
+  const [qrCodeUrl, setQrCodeUrl] = useState('');
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [secretCopied, setSecretCopied] = useState(false);
+  const [backupCodesSaved, setBackupCodesSaved] = useState(false);
+
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+    watch,
+    reset,
+  } = useForm<TOTPSetupFormData>({
+    resolver: zodResolver(totpSetupSchema),
+    mode: 'onChange',
+  });
+
+  const backupCodesAcknowledged = watch('backupCodesAcknowledged');
+
+  useEffect(() => {
+    setupTOTP();
+  }, []);
+
+  const setupTOTP = async () => {
+    try {
+      setLoading(true);
+      const result = await AuthService.setupTOTP(userId);
+      setTotpSecret(result.secret);
+      setQrCodeUrl(result.qrCode);
+      setBackupCodes(result.backupCodes);
+    } catch (error: any) {
+      Alert.alert('Setup Error', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyTOTP = async (data: TOTPSetupFormData) => {
+    try {
+      setLoading(true);
+      const isValid = await AuthService.verifyTOTP(userId, data.verificationCode);
+      
+      if (isValid) {
+        Alert.alert(
+          'TOTP Setup Complete',
+          'Your authenticator has been successfully configured!',
+          [{ text: 'OK', onPress: onComplete }]
+        );
+      } else {
+        Alert.alert('Verification Failed', 'The code you entered is incorrect. Please try again.');
+        reset({ verificationCode: '' });
+      }
+    } catch (error: any) {
+      Alert.alert('Verification Error', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copySecret = async () => {
+    await Clipboard.setString(totpSecret);
+    setSecretCopied(true);
+    Alert.alert('Copied', 'Secret key copied to clipboard');
+    setTimeout(() => setSecretCopied(false), 3000);
+  };
+
+  const copyBackupCodes = async () => {
+    const codesText = backupCodes.join('\n');
+    await Clipboard.setString(codesText);
+    setBackupCodesSaved(true);
+    Alert.alert('Copied', 'Backup codes copied to clipboard');
+  };
+
+  const renderStepIndicator = () => (
+    <View style={styles.stepIndicator}>
+      {[1, 2, 3].map((step) => (
+        <View key={step} style={styles.stepItem}>
+          <View
+            style={[
+              styles.stepCircle,
+              currentStep >= step && styles.stepCircleActive,
+              currentStep === step && styles.stepCircleCurrent,
+            ]}
+          >
+            {currentStep > step ? (
+              <Ionicons name="checkmark" size={16} color="#FFF" />
+            ) : (
+              <Text style={[styles.stepText, currentStep >= step && styles.stepTextActive]}>
+                {step}
+              </Text>
+            )}
+          </View>
+          {step < 3 && <View style={styles.stepLine} />}
+        </View>
+      ))}
+    </View>
+  );
+
+  const renderAppDownloadStep = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Step 1: Download Authenticator App</Text>
+      <Text style={styles.stepDescription}>
+        First, download an authenticator app on your mobile device. We recommend one of these popular options:
+      </Text>
+
+      <View style={styles.appsList}>
+        <View style={styles.appItem}>
+          <Ionicons name="phone-portrait" size={24} color="#1976D2" />
+          <View style={styles.appInfo}>
+            <Text style={styles.appName}>Google Authenticator</Text>
+            <Text style={styles.appDescription}>Free, reliable, and widely supported</Text>
+          </View>
+        </View>
+
+        <View style={styles.appItem}>
+          <Ionicons name="shield-checkmark" size={24} color="#4CAF50" />
+          <View style={styles.appInfo}>
+            <Text style={styles.appName}>Microsoft Authenticator</Text>
+            <Text style={styles.appDescription}>Includes backup and sync features</Text>
+          </View>
+        </View>
+
+        <View style={styles.appItem}>
+          <Ionicons name="key" size={24} color="#FF9800" />
+          <View style={styles.appInfo}>
+            <Text style={styles.appName}>Authy</Text>
+            <Text style={styles.appDescription}>Multi-device support with cloud backup</Text>
+          </View>
+        </View>
+      </View>
+
+      <TouchableOpacity
+        style={styles.continueButton}
+        onPress={() => setCurrentStep(2)}
+      >
+        <Text style={styles.continueButtonText}>I Have an App Installed</Text>
+        <Ionicons name="arrow-forward" size={20} color="#FFF" />
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderQRCodeStep = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Step 2: Scan QR Code</Text>
+      <Text style={styles.stepDescription}>
+        Open your authenticator app and scan this QR code to add DocsShelf to your authenticator.
+      </Text>
+
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <Progress.Circle size={60} indeterminate color="#1976D2" />
+          <Text style={styles.loadingText}>Generating QR Code...</Text>
+        </View>
+      ) : (
+        <View style={styles.qrContainer}>
+          <QRCode
+            value={qrCodeUrl}
+            size={screenWidth * 0.6}
+            backgroundColor="#FFF"
+            color="#000"
+          />
+        </View>
+      )}
+
+      <Text style={styles.alternativeTitle}>Alternative: Manual Entry</Text>
+      <Text style={styles.alternativeDescription}>
+        If you can't scan the QR code, enter this secret key manually:
+      </Text>
+
+      <View style={styles.secretContainer}>
+        <Text style={styles.secretText} numberOfLines={1}>
+          {totpSecret}
+        </Text>
+        <TouchableOpacity
+          style={[styles.copyButton, secretCopied && styles.copyButtonSuccess]}
+          onPress={copySecret}
+        >
+          <Ionicons
+            name={secretCopied ? 'checkmark' : 'copy'}
+            size={16}
+            color={secretCopied ? '#4CAF50' : '#1976D2'}
+          />
+          <Text style={[styles.copyButtonText, secretCopied && styles.copyButtonTextSuccess]}>
+            {secretCopied ? 'Copied!' : 'Copy'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.stepNavigation}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => setCurrentStep(1)}
+        >
+          <Ionicons name="arrow-back" size={20} color="#1976D2" />
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.continueButton}
+          onPress={() => setCurrentStep(3)}
+        >
+          <Text style={styles.continueButtonText}>Continue</Text>
+          <Ionicons name="arrow-forward" size={20} color="#FFF" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderVerificationStep = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Step 3: Verify Setup</Text>
+      <Text style={styles.stepDescription}>
+        Enter the 6-digit code from your authenticator app to verify the setup.
+      </Text>
+
+      <Controller
+        control={control}
+        name="verificationCode"
+        render={({ field: { onChange, value } }) => (
+          <View style={styles.codeInputContainer}>
+            <View style={styles.codeInputWrapper}>
+              <Ionicons name="key" size={20} color="#666" style={styles.inputIcon} />
+              <TextInput
+                style={[styles.codeInput, errors.verificationCode && styles.codeInputError]}
+                placeholder="000000"
+                placeholderTextColor="#999"
+                value={value}
+                onChangeText={onChange}
+                keyboardType="number-pad"
+                maxLength={6}
+                autoComplete="one-time-code"
+                textAlign="center"
+              />
+            </View>
+            {errors.verificationCode && (
+              <Text style={styles.errorText}>{errors.verificationCode.message}</Text>
+            )}
+          </View>
+        )}
+      />
+
+      <View style={styles.backupCodesSection}>
+        <Text style={styles.backupCodesTitle}>Important: Save Your Backup Codes</Text>
+        <Text style={styles.backupCodesDescription}>
+          These backup codes can be used to access your account if you lose your authenticator device. 
+          Store them in a safe place.
+        </Text>
+
+        <View style={styles.backupCodesContainer}>
+          <ScrollView style={styles.backupCodesList}>
+            {backupCodes.map((code, index) => (
+              <Text key={index} style={styles.backupCodeText}>
+                {code}
+              </Text>
+            ))}
+          </ScrollView>
+          
+          <TouchableOpacity
+            style={[styles.copyButton, styles.copyBackupButton]}
+            onPress={copyBackupCodes}
+          >
+            <Ionicons name="copy" size={16} color="#1976D2" />
+            <Text style={styles.copyButtonText}>Copy All Codes</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Controller
+          control={control}
+          name="backupCodesAcknowledged"
+          render={({ field: { onChange, value } }) => (
+            <TouchableOpacity
+              style={styles.acknowledgmentContainer}
+              onPress={() => onChange(!value)}
+            >
+              <View style={[styles.checkbox, value && styles.checkboxChecked]}>
+                {value && <Ionicons name="checkmark" size={14} color="#FFF" />}
+              </View>
+              <Text style={styles.acknowledgmentText}>
+                I have saved my backup codes in a secure location
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
+        {errors.backupCodesAcknowledged && (
+          <Text style={styles.errorText}>{errors.backupCodesAcknowledged.message}</Text>
+        )}
+      </View>
+
+      <View style={styles.stepNavigation}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => setCurrentStep(2)}
+        >
+          <Ionicons name="arrow-back" size={20} color="#1976D2" />
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.verifyButton,
+            (!watch('verificationCode') || !backupCodesAcknowledged || loading) && styles.verifyButtonDisabled,
+          ]}
+          onPress={handleSubmit(verifyTOTP)}
+          disabled={!watch('verificationCode') || !backupCodesAcknowledged || loading}
+        >
+          {loading ? (
+            <Progress.Circle size={20} indeterminate color="#FFF" />
+          ) : (
+            <>
+              <Text style={styles.verifyButtonText}>Complete Setup</Text>
+              <Ionicons name="checkmark-circle" size={20} color="#FFF" />
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderCurrentStep = () => {
+    switch (currentStep) {
+      case 1:
+        return renderAppDownloadStep();
+      case 2:
+        return renderQRCodeStep();
+      case 3:
+        return renderVerificationStep();
+      default:
+        return renderAppDownloadStep();
+    }
+  };
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <LinearGradient colors={['#1976D2', '#1565C0']} style={styles.header}>
+        <Ionicons name="shield-checkmark" size={48} color="#FFF" />
+        <Text style={styles.title}>Setup Two-Factor Authentication</Text>
+        <Text style={styles.subtitle}>
+          Add an extra layer of security to your account
+        </Text>
+        {renderStepIndicator()}
+      </LinearGradient>
+
+      <View style={styles.content}>
+        {renderCurrentStep()}
+
+        {onSkip && currentStep === 1 && (
+          <TouchableOpacity style={styles.skipButton} onPress={onSkip}>
+            <Text style={styles.skipButtonText}>Skip for Now</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+  },
+  contentContainer: {
+    flexGrow: 1,
+  },
+  header: {
+    paddingTop: 60,
+    paddingBottom: 30,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#E3F2FD',
+    textAlign: 'center',
+    marginBottom: 30,
+  },
+  stepIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stepCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepCircleActive: {
+    backgroundColor: '#4CAF50',
+  },
+  stepCircleCurrent: {
+    backgroundColor: '#FFF',
+  },
+  stepText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  stepTextActive: {
+    color: '#1976D2',
+  },
+  stepLine: {
+    width: 30,
+    height: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    marginHorizontal: 8,
+  },
+  content: {
+    flex: 1,
+    padding: 20,
+  },
+  stepContainer: {
+    flex: 1,
+  },
+  stepTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  stepDescription: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 30,
+    lineHeight: 24,
+  },
+  appsList: {
+    marginBottom: 30,
+  },
+  appItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  appInfo: {
+    marginLeft: 16,
+    flex: 1,
+  },
+  appName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  appDescription: {
+    fontSize: 14,
+    color: '#666',
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 16,
+  },
+  qrContainer: {
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  alternativeTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  alternativeDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 16,
+  },
+  secretContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F0F0',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 30,
+  },
+  secretText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'monospace',
+    color: '#333',
+  },
+  copyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#E3F2FD',
+  },
+  copyButtonSuccess: {
+    backgroundColor: '#E8F5E8',
+  },
+  copyButtonText: {
+    fontSize: 12,
+    color: '#1976D2',
+    marginLeft: 4,
+    fontWeight: 'bold',
+  },
+  copyButtonTextSuccess: {
+    color: '#4CAF50',
+  },
+  codeInputContainer: {
+    marginBottom: 30,
+  },
+  codeInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  codeInput: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    letterSpacing: 4,
+  },
+  codeInputError: {
+    borderColor: '#FF4444',
+  },
+  backupCodesSection: {
+    marginBottom: 30,
+  },
+  backupCodesTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  backupCodesDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  backupCodesContainer: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  backupCodesList: {
+    maxHeight: 120,
+    marginBottom: 12,
+  },
+  backupCodeText: {
+    fontSize: 14,
+    fontFamily: 'monospace',
+    color: '#333',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 4,
+    marginBottom: 4,
+  },
+  copyBackupButton: {
+    alignSelf: 'flex-start',
+  },
+  acknowledgmentContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#DDD',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  checkboxChecked: {
+    backgroundColor: '#1976D2',
+    borderColor: '#1976D2',
+  },
+  acknowledgmentText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+  },
+  stepNavigation: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 'auto',
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  backButtonText: {
+    fontSize: 16,
+    color: '#1976D2',
+    marginLeft: 8,
+  },
+  continueButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1976D2',
+    paddingVertical: 15,
+    paddingHorizontal: 25,
+    borderRadius: 25,
+  },
+  continueButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginRight: 8,
+  },
+  verifyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4CAF50',
+    paddingVertical: 15,
+    paddingHorizontal: 25,
+    borderRadius: 25,
+  },
+  verifyButtonDisabled: {
+    backgroundColor: '#CCC',
+  },
+  verifyButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginRight: 8,
+  },
+  skipButton: {
+    alignItems: 'center',
+    paddingVertical: 15,
+    marginTop: 20,
+  },
+  skipButtonText: {
+    fontSize: 16,
+    color: '#666',
+    textDecorationLine: 'underline',
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#FF4444',
+    marginTop: 8,
+  },
+});
+
+export default TOTPSetupScreen;

@@ -1,0 +1,533 @@
+/**
+ * Production Registration Screen - React 19 Compatible
+ * Uses class components to avoid hooks compatibility issues
+ */
+
+import * as React from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  SafeAreaView,
+} from 'react-native';
+import { useDispatch } from 'react-redux';
+import { AppDispatch } from '../../store';
+import AuthService from '../../services/auth/AuthService';
+import { calculatePasswordStrength, validateEmailSecurity } from '../../utils/validation';
+
+interface RegistrationState {
+  email: string;
+  password: string;
+  confirmPassword: string;
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+  termsAccepted: boolean;
+  privacyAccepted: boolean;
+  showPassword: boolean;
+  showConfirmPassword: boolean;
+  loading: boolean;
+  currentStep: number;
+  passwordStrength: {
+    score: number;
+    level: string;
+    feedback: string[];
+  };
+}
+
+export class RegistrationScreen extends React.Component<{}, RegistrationState> {
+  private dispatch: AppDispatch;
+
+  constructor(props: {}) {
+    super(props);
+    this.dispatch = useDispatch();
+    this.state = {
+      email: '',
+      password: '',
+      confirmPassword: '',
+      firstName: '',
+      lastName: '',
+      phoneNumber: '',
+      termsAccepted: false,
+      privacyAccepted: false,
+      showPassword: false,
+      showConfirmPassword: false,
+      loading: false,
+      currentStep: 1,
+      passwordStrength: {
+        score: 0,
+        level: 'very-weak',
+        feedback: []
+      }
+    };
+  }
+
+  componentDidUpdate(prevProps: {}, prevState: RegistrationState) {
+    if (prevState.password !== this.state.password) {
+      this.updatePasswordStrength();
+    }
+  }
+
+  private updatePasswordStrength = () => {
+    if (this.state.password) {
+      const strength = calculatePasswordStrength(this.state.password);
+      this.setState({ passwordStrength: strength });
+    }
+  };
+
+  private validateForm = (): boolean => {
+    const { email, password, confirmPassword, firstName, lastName, termsAccepted, privacyAccepted } = this.state;
+
+    if (!email || !password || !firstName || !lastName) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return false;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match');
+      return false;
+    }
+
+    if (this.state.passwordStrength.score < 3) {
+      Alert.alert('Error', 'Please choose a stronger password');
+      return false;
+    }
+
+    if (!termsAccepted || !privacyAccepted) {
+      Alert.alert('Error', 'Please accept the terms and privacy policy');
+      return false;
+    }
+
+    const emailValidation = validateEmailSecurity(email);
+    if (!emailValidation.isValid) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return false;
+    }
+
+    return true;
+  };
+
+  private handleRegistration = async () => {
+    if (!this.validateForm()) return;
+
+    this.setState({ loading: true });
+
+    try {
+      const result = await AuthService.register({
+        email: this.state.email,
+        password: this.state.password,
+        firstName: this.state.firstName,
+        lastName: this.state.lastName,
+        phoneNumber: this.state.phoneNumber || '',
+      });
+
+      if (result.success) {
+        Alert.alert(
+          'Registration Successful!',
+          'Your account has been created. Please check your email for verification.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                // Navigate to login or next step
+                Alert.alert('Success', 'Registration completed successfully!');
+              }
+            }
+          ]
+        );
+      }
+    } catch (error) {
+      Alert.alert('Registration Failed', (error as Error).message);
+    } finally {
+      this.setState({ loading: false });
+    }
+  };
+
+  private getPasswordStrengthColor = (): string => {
+    const { level } = this.state.passwordStrength;
+    switch (level) {
+      case 'very-weak':
+        return '#ef4444';
+      case 'weak':
+        return '#f97316';
+      case 'medium':
+        return '#eab308';
+      case 'strong':
+        return '#22c55e';
+      case 'very-strong':
+        return '#16a34a';
+      default:
+        return '#6b7280';
+    }
+  };
+
+  render() {
+    const {
+      email,
+      password,
+      confirmPassword,
+      firstName,
+      lastName,
+      phoneNumber,
+      termsAccepted,
+      privacyAccepted,
+      showPassword,
+      showConfirmPassword,
+      loading,
+      passwordStrength
+    } = this.state;
+
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.header}>
+            <Text style={styles.title}>Create Account</Text>
+            <Text style={styles.subtitle}>Join DocsShelf to securely manage your documents</Text>
+          </View>
+
+          <View style={styles.form}>
+            {/* Personal Information */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Personal Information</Text>
+              
+              <View style={styles.row}>
+                <View style={[styles.inputContainer, { flex: 1, marginRight: 8 }]}>
+                  <Text style={styles.label}>First Name *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={firstName}
+                    onChangeText={(text) => this.setState({ firstName: text })}
+                    placeholder="Enter first name"
+                    autoCapitalize="words"
+                  />
+                </View>
+
+                <View style={[styles.inputContainer, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={styles.label}>Last Name *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={lastName}
+                    onChangeText={(text) => this.setState({ lastName: text })}
+                    placeholder="Enter last name"
+                    autoCapitalize="words"
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* Contact Information */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Contact Information</Text>
+              
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Email Address *</Text>
+                <TextInput
+                  style={styles.input}
+                  value={email}
+                  onChangeText={(text) => this.setState({ email: text })}
+                  placeholder="Enter email address"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Phone Number</Text>
+                <TextInput
+                  style={styles.input}
+                  value={phoneNumber}
+                  onChangeText={(text) => this.setState({ phoneNumber: text })}
+                  placeholder="Enter phone number"
+                  keyboardType="phone-pad"
+                />
+              </View>
+            </View>
+
+            {/* Security */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Security</Text>
+              
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Password *</Text>
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    value={password}
+                    onChangeText={(text) => this.setState({ password: text })}
+                    placeholder="Create password"
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity
+                    style={styles.passwordToggle}
+                    onPress={() => this.setState({ showPassword: !showPassword })}
+                  >
+                    <Text style={styles.passwordToggleText}>
+                      {showPassword ? '👁️' : '👁️‍🗨️'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                
+                {password.length > 0 && (
+                  <View style={styles.passwordStrength}>
+                    <View style={styles.passwordStrengthBar}>
+                      <View
+                        style={[
+                          styles.passwordStrengthFill,
+                          {
+                            width: `${(passwordStrength.score / 4) * 100}%`,
+                            backgroundColor: this.getPasswordStrengthColor()
+                          }
+                        ]}
+                      />
+                    </View>
+                    <Text style={[styles.passwordStrengthText, { color: this.getPasswordStrengthColor() }]}>
+                      {passwordStrength.level.toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Confirm Password *</Text>
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    value={confirmPassword}
+                    onChangeText={(text) => this.setState({ confirmPassword: text })}
+                    placeholder="Confirm password"
+                    secureTextEntry={!showConfirmPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity
+                    style={styles.passwordToggle}
+                    onPress={() => this.setState({ showConfirmPassword: !showConfirmPassword })}
+                  >
+                    <Text style={styles.passwordToggleText}>
+                      {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                
+                {confirmPassword.length > 0 && password !== confirmPassword && (
+                  <Text style={styles.errorText}>Passwords do not match</Text>
+                )}
+              </View>
+            </View>
+
+            {/* Terms and Privacy */}
+            <View style={styles.section}>
+              <TouchableOpacity
+                style={styles.checkbox}
+                onPress={() => this.setState({ termsAccepted: !termsAccepted })}
+              >
+                <View style={[styles.checkboxBox, termsAccepted && styles.checkboxBoxChecked]}>
+                  {termsAccepted && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+                <Text style={styles.checkboxText}>
+                  I agree to the <Text style={styles.link}>Terms of Service</Text>
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.checkbox}
+                onPress={() => this.setState({ privacyAccepted: !privacyAccepted })}
+              >
+                <View style={[styles.checkboxBox, privacyAccepted && styles.checkboxBoxChecked]}>
+                  {privacyAccepted && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+                <Text style={styles.checkboxText}>
+                  I agree to the <Text style={styles.link}>Privacy Policy</Text>
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.registerButton,
+                loading && styles.registerButtonDisabled,
+              ]}
+              onPress={this.handleRegistration}
+              disabled={loading}
+            >
+              <Text style={styles.registerButtonText}>
+                {loading ? 'Creating Account...' : 'Create Account'}
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.loginLink}>
+              <Text style={styles.loginLinkText}>
+                Already have an account?{' '}
+                <Text style={styles.link}>Sign In</Text>
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  scrollContent: {
+    padding: 20,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  form: {
+    flex: 1,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 16,
+  },
+  row: {
+    flexDirection: 'row',
+  },
+  inputContainer: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    backgroundColor: '#ffffff',
+  },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  passwordToggle: {
+    position: 'absolute',
+    right: 12,
+    padding: 4,
+  },
+  passwordToggleText: {
+    fontSize: 18,
+  },
+  passwordStrength: {
+    marginTop: 8,
+  },
+  passwordStrengthBar: {
+    height: 4,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  passwordStrengthFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  passwordStrengthText: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#ef4444',
+    marginTop: 4,
+  },
+  checkbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  checkboxBox: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: '#d1d5db',
+    borderRadius: 4,
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  checkboxBoxChecked: {
+    backgroundColor: '#6366f1',
+    borderColor: '#6366f1',
+  },
+  checkmark: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  checkboxText: {
+    fontSize: 14,
+    color: '#374151',
+    flex: 1,
+  },
+  link: {
+    color: '#6366f1',
+    fontWeight: '500',
+  },
+  registerButton: {
+    backgroundColor: '#6366f1',
+    paddingVertical: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  registerButtonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  registerButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loginLink: {
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  loginLinkText: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+});
+
+// Export as functional component wrapper for compatibility
+export const RegistrationScreenWrapper: React.FC = () => {
+  return <RegistrationScreen />;
+};
+
+export default RegistrationScreenWrapper;

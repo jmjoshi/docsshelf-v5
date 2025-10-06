@@ -1,0 +1,709 @@
+/**
+ * User Registration Screen
+ * Secure user registration with validation, password strength checking, and email verification
+ */
+
+import * as React from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { useDispatch, useSelector } from 'react-redux';
+import * as Progress from 'react-native-progress';
+
+import { registrationSchema, type RegistrationFormData } from '@/utils/validation';
+import { calculatePasswordStrength, validateEmailSecurity } from '@/utils/validation';
+import { registerStart, registerSuccess, registerFailure } from '@/store/slices/authSlice';
+import AuthService from '@/services/auth/AuthService';
+import type { RootState } from '@/types';
+
+export const RegistrationScreen: React.FC = () => {
+  const dispatch = useDispatch();
+  const { loading, error } = useSelector((state: RootState) => state.auth);
+  
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
+  const [passwordStrength, setPasswordStrength] = React.useState({ score: 0, level: 'very-weak', feedback: [] });
+  const [emailSuggestions, setEmailSuggestions] = React.useState<string[]>([]);
+  const [currentStep, setCurrentStep] = React.useState(1);
+  const [isEmailVerified, setIsEmailVerified] = React.useState(false);
+
+  const {
+    control,
+    handleSubmit,
+    watch,
+    formState: { errors, isValid, touchedFields },
+    trigger,
+  } = useForm<RegistrationFormData>({
+    resolver: zodResolver(registrationSchema),
+    mode: 'onChange',
+  });
+
+  const password = watch('password');
+  const email = watch('email');
+
+  // Monitor password strength
+  React.useEffect(() => {
+    if (password) {
+      const strength = calculatePasswordStrength(password);
+      setPasswordStrength(strength);
+    }
+  }, [password]);
+
+  // Validate email and check for suggestions
+  React.useEffect(() => {
+    if (email) {
+      const validation = validateEmailSecurity(email);
+      setEmailSuggestions(validation.suggestions);
+    }
+  }, [email]);
+
+  const onSubmit = async (data: RegistrationFormData) => {
+    try {
+      dispatch(registerStart());
+
+      const result = await AuthService.register({
+        email: data.email,
+        password: data.password,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        phoneNumber: data.phoneNumber || '',
+      });
+
+      dispatch(registerSuccess(result));
+      
+      // Navigate to email verification or home screen
+      Alert.alert(
+        'Registration Successful',
+        'Please check your email to verify your account.',
+        [{ text: 'OK', onPress: () => setCurrentStep(4) }]
+      );
+    } catch (error: any) {
+      dispatch(registerFailure(error.message));
+      Alert.alert('Registration Failed', error.message);
+    }
+  };
+
+  const renderPasswordStrengthIndicator = () => {
+    const getStrengthColor = (level: string) => {
+      switch (level) {
+        case 'very-weak': return '#FF4444';
+        case 'weak': return '#FF8800';
+        case 'fair': return '#FFBB00';
+        case 'good': return '#88CC00';
+        case 'strong': return '#00AA00';
+        default: return '#DDD';
+      }
+    };
+
+    const getStrengthText = (level: string) => {
+      switch (level) {
+        case 'very-weak': return 'Very Weak';
+        case 'weak': return 'Weak';
+        case 'fair': return 'Fair';
+        case 'good': return 'Good';
+        case 'strong': return 'Strong';
+        default: return '';
+      }
+    };
+
+    return (
+      <View style={styles.passwordStrengthContainer}>
+        <View style={styles.passwordStrengthHeader}>
+          <Text style={styles.passwordStrengthLabel}>Password Strength:</Text>
+          <Text style={[styles.passwordStrengthText, { color: getStrengthColor(passwordStrength.level) }]}>
+            {getStrengthText(passwordStrength.level)}
+          </Text>
+        </View>
+        <Progress.Bar
+          progress={passwordStrength.score / 100}
+          width={null}
+          height={4}
+          color={getStrengthColor(passwordStrength.level)}
+          unfilledColor="#E5E5E5"
+          borderWidth={0}
+          style={styles.passwordStrengthBar}
+        />
+        {passwordStrength.feedback.length > 0 && (
+          <View style={styles.passwordFeedback}>
+            {passwordStrength.feedback.map((feedback: string, index: number) => (
+              <Text key={index} style={styles.passwordFeedbackText}>
+                • {feedback}
+              </Text>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const renderFormField = (
+    name: keyof RegistrationFormData,
+    placeholder: string,
+    icon: string,
+    options: {
+      secureTextEntry?: boolean;
+      keyboardType?: 'default' | 'email-address' | 'phone-pad';
+      autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+      multiline?: boolean;
+      showToggle?: boolean;
+      onToggle?: () => void;
+    } = {}
+  ) => (
+    <View style={styles.inputContainer}>
+      <View style={styles.inputWrapper}>
+        <Ionicons name={icon as any} size={20} color="#666" style={styles.inputIcon} />
+        <Controller
+          control={control}
+          name={name}
+          render={({ field: { onChange, onBlur, value } }: any) => (
+            <TextInput
+              style={[styles.textInput, errors[name] && styles.textInputError]}
+              placeholder={placeholder}
+              placeholderTextColor="#999"
+              onBlur={onBlur}
+              onChangeText={onChange}
+              value={value}
+              secureTextEntry={options.secureTextEntry}
+              keyboardType={options.keyboardType || 'default'}
+              autoCapitalize={options.autoCapitalize || 'sentences'}
+              autoCorrect={false}
+              multiline={options.multiline}
+            />
+          )}
+        />
+        {options.showToggle && (
+          <TouchableOpacity onPress={options.onToggle} style={styles.toggleButton}>
+            <Ionicons
+              name={options.secureTextEntry ? 'eye-off' : 'eye'}
+              size={20}
+              color="#666"
+            />
+          </TouchableOpacity>
+        )}
+      </View>
+      {errors[name] && (
+        <Text style={styles.errorText}>{errors[name]?.message}</Text>
+      )}
+      {name === 'email' && emailSuggestions.length > 0 && (
+        <View style={styles.suggestionsContainer}>
+          {emailSuggestions.map((suggestion: string, index: number) => (
+            <Text key={index} style={styles.suggestionText}>
+              {suggestion}
+            </Text>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+
+  const renderStepIndicator = () => (
+    <View style={styles.stepIndicator}>
+      {[1, 2, 3, 4].map((step) => (
+        <View key={step} style={styles.stepItem}>
+          <View
+            style={[
+              styles.stepCircle,
+              currentStep >= step && styles.stepCircleActive,
+              currentStep === step && styles.stepCircleCurrent,
+            ]}
+          >
+            {currentStep > step ? (
+              <Ionicons name="checkmark" size={16} color="#FFF" />
+            ) : (
+              <Text style={[styles.stepText, currentStep >= step && styles.stepTextActive]}>
+                {step}
+              </Text>
+            )}
+          </View>
+          {step < 4 && <View style={styles.stepLine} />}
+        </View>
+      ))}
+    </View>
+  );
+
+  const renderPersonalInfoStep = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Personal Information</Text>
+      <Text style={styles.stepDescription}>
+        Please provide your personal details to create your account.
+      </Text>
+
+      {renderFormField('firstName', 'First Name', 'person', { autoCapitalize: 'words' })}
+      {renderFormField('lastName', 'Last Name', 'person', { autoCapitalize: 'words' })}
+      {renderFormField('email', 'Email Address', 'mail', {
+        keyboardType: 'email-address',
+        autoCapitalize: 'none',
+      })}
+      {renderFormField('phoneNumber', 'Phone Number (Optional)', 'call', {
+        keyboardType: 'phone-pad',
+      })}
+
+      <TouchableOpacity
+        style={[styles.continueButton, (!isValid || !email || !watch('firstName') || !watch('lastName')) && styles.continueButtonDisabled]}
+        onPress={() => setCurrentStep(2)}
+        disabled={!isValid || !email || !watch('firstName') || !watch('lastName')}
+      >
+        <Text style={styles.continueButtonText}>Continue</Text>
+        <Ionicons name="arrow-forward" size={20} color="#FFF" />
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderPasswordStep = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Create Secure Password</Text>
+      <Text style={styles.stepDescription}>
+        Choose a strong password to protect your account and documents.
+      </Text>
+
+      {renderFormField('password', 'Password', 'lock-closed', {
+        secureTextEntry: !showPassword,
+        showToggle: true,
+        onToggle: () => setShowPassword(!showPassword),
+      })}
+
+      {password && renderPasswordStrengthIndicator()}
+
+      {renderFormField('confirmPassword', 'Confirm Password', 'lock-closed', {
+        secureTextEntry: !showConfirmPassword,
+        showToggle: true,
+        onToggle: () => setShowConfirmPassword(!showConfirmPassword),
+      })}
+
+      <View style={styles.stepNavigation}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => setCurrentStep(1)}
+        >
+          <Ionicons name="arrow-back" size={20} color="#1976D2" />
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.continueButton, (!password || !watch('confirmPassword') || passwordStrength.level === 'very-weak') && styles.continueButtonDisabled]}
+          onPress={() => setCurrentStep(3)}
+          disabled={!password || !watch('confirmPassword') || passwordStrength.level === 'very-weak'}
+        >
+          <Text style={styles.continueButtonText}>Continue</Text>
+          <Ionicons name="arrow-forward" size={20} color="#FFF" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderTermsStep = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Terms & Privacy</Text>
+      <Text style={styles.stepDescription}>
+        Please review and accept our terms and privacy policy.
+      </Text>
+
+      <View style={styles.checkboxContainer}>
+        <Controller
+          control={control}
+          name="termsAccepted"
+          render={({ field: { onChange, value } }: any) => (
+            <TouchableOpacity
+              style={styles.checkbox}
+              onPress={() => onChange(!value)}
+            >
+              <View style={[styles.checkboxBox, value && styles.checkboxBoxChecked]}>
+                {value && <Ionicons name="checkmark" size={16} color="#FFF" />}
+              </View>
+              <Text style={styles.checkboxText}>
+                I agree to the{' '}
+                <Text style={styles.linkText}>Terms of Service</Text>
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
+        {errors.termsAccepted && (
+          <Text style={styles.errorText}>{errors.termsAccepted.message}</Text>
+        )}
+      </View>
+
+      <View style={styles.checkboxContainer}>
+        <Controller
+          control={control}
+          name="privacyAccepted"
+          render={({ field: { onChange, value } }: any) => (
+            <TouchableOpacity
+              style={styles.checkbox}
+              onPress={() => onChange(!value)}
+            >
+              <View style={[styles.checkboxBox, value && styles.checkboxBoxChecked]}>
+                {value && <Ionicons name="checkmark" size={16} color="#FFF" />}
+              </View>
+              <Text style={styles.checkboxText}>
+                I agree to the{' '}
+                <Text style={styles.linkText}>Privacy Policy</Text>
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
+        {errors.privacyAccepted && (
+          <Text style={styles.errorText}>{errors.privacyAccepted.message}</Text>
+        )}
+      </View>
+
+      <View style={styles.stepNavigation}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => setCurrentStep(2)}
+        >
+          <Ionicons name="arrow-back" size={20} color="#1976D2" />
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.registerButton, (!watch('termsAccepted') || !watch('privacyAccepted') || loading) && styles.registerButtonDisabled]}
+          onPress={handleSubmit(onSubmit)}
+          disabled={!watch('termsAccepted') || !watch('privacyAccepted') || loading}
+        >
+          {loading ? (
+            <Progress.Circle size={20} indeterminate color="#FFF" />
+          ) : (
+            <>
+              <Text style={styles.registerButtonText}>Create Account</Text>
+              <Ionicons name="checkmark-circle" size={20} color="#FFF" />
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderVerificationStep = () => (
+    <View style={styles.stepContainer}>
+      <View style={styles.successIcon}>
+        <Ionicons name="mail" size={64} color="#4CAF50" />
+      </View>
+      <Text style={styles.stepTitle}>Verify Your Email</Text>
+      <Text style={styles.stepDescription}>
+        We've sent a verification email to {email}. Please check your inbox and click the verification link to complete your registration.
+      </Text>
+
+      <TouchableOpacity style={styles.resendButton}>
+        <Text style={styles.resendButtonText}>Resend Verification Email</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.continueToLoginButton}>
+        <Text style={styles.continueToLoginText}>Continue to Login</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderCurrentStep = () => {
+    switch (currentStep) {
+      case 1:
+        return renderPersonalInfoStep();
+      case 2:
+        return renderPasswordStep();
+      case 3:
+        return renderTermsStep();
+      case 4:
+        return renderVerificationStep();
+      default:
+        return renderPersonalInfoStep();
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <LinearGradient
+        colors={['#1976D2', '#1565C0']}
+        style={styles.header}
+      >
+        <Text style={styles.title}>Create Account</Text>
+        <Text style={styles.subtitle}>Join DocsShelf for secure document management</Text>
+        {renderStepIndicator()}
+      </LinearGradient>
+
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentContainer}
+        keyboardShouldPersistTaps="handled"
+      >
+        {renderCurrentStep()}
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+  },
+  header: {
+    paddingTop: 60,
+    paddingBottom: 30,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#E3F2FD',
+    textAlign: 'center',
+    marginBottom: 30,
+  },
+  stepIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stepCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepCircleActive: {
+    backgroundColor: '#4CAF50',
+  },
+  stepCircleCurrent: {
+    backgroundColor: '#FFF',
+  },
+  stepText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  stepTextActive: {
+    color: '#1976D2',
+  },
+  stepLine: {
+    width: 30,
+    height: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    marginHorizontal: 8,
+  },
+  content: {
+    flex: 1,
+  },
+  contentContainer: {
+    padding: 20,
+  },
+  stepContainer: {
+    flex: 1,
+  },
+  stepTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  stepDescription: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 30,
+    lineHeight: 24,
+  },
+  inputContainer: {
+    marginBottom: 20,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#333',
+  },
+  textInputError: {
+    borderColor: '#FF4444',
+  },
+  toggleButton: {
+    marginLeft: 12,
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#FF4444',
+    marginTop: 8,
+    marginLeft: 15,
+  },
+  suggestionsContainer: {
+    marginTop: 8,
+    marginLeft: 15,
+  },
+  suggestionText: {
+    fontSize: 14,
+    color: '#FF8800',
+  },
+  passwordStrengthContainer: {
+    marginBottom: 20,
+  },
+  passwordStrengthHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  passwordStrengthLabel: {
+    fontSize: 14,
+    color: '#666',
+  },
+  passwordStrengthText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  passwordStrengthBar: {
+    marginBottom: 12,
+  },
+  passwordFeedback: {
+    marginTop: 8,
+  },
+  passwordFeedbackText: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+  },
+  checkboxContainer: {
+    marginBottom: 20,
+  },
+  checkbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkboxBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#DDD',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  checkboxBoxChecked: {
+    backgroundColor: '#1976D2',
+    borderColor: '#1976D2',
+  },
+  checkboxText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+  },
+  linkText: {
+    color: '#1976D2',
+    textDecorationLine: 'underline',
+  },
+  stepNavigation: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 30,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  backButtonText: {
+    fontSize: 16,
+    color: '#1976D2',
+    marginLeft: 8,
+  },
+  continueButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1976D2',
+    paddingVertical: 15,
+    paddingHorizontal: 25,
+    borderRadius: 25,
+  },
+  continueButtonDisabled: {
+    backgroundColor: '#CCC',
+  },
+  continueButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginRight: 8,
+  },
+  registerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4CAF50',
+    paddingVertical: 15,
+    paddingHorizontal: 25,
+    borderRadius: 25,
+  },
+  registerButtonDisabled: {
+    backgroundColor: '#CCC',
+  },
+  registerButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginRight: 8,
+  },
+  successIcon: {
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  resendButton: {
+    alignItems: 'center',
+    paddingVertical: 15,
+    marginTop: 30,
+  },
+  resendButtonText: {
+    fontSize: 16,
+    color: '#1976D2',
+    textDecorationLine: 'underline',
+  },
+  continueToLoginButton: {
+    backgroundColor: '#1976D2',
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  continueToLoginText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+});
+
+export default RegistrationScreen;
