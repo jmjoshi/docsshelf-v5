@@ -187,6 +187,13 @@ class AuthService {
 
       // Check if MFA is required
       const mfaRequired = userData.user.securitySettings.mfaEnabled;
+      
+      console.log('Login MFA Check:', {
+        email: credentials.email,
+        mfaRequired,
+        securitySettings: userData.user.securitySettings,
+        userId: userData.user.id
+      });
 
       if (mfaRequired) {
         // Generate temporary token for MFA process
@@ -292,6 +299,78 @@ class AuthService {
       return await this.verifyBackupCode(userId, code);
     } catch (error) {
       throw new Error(`TOTP verification failed: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Complete TOTP setup and enable MFA for user
+   */
+  async completeTOTPSetup(userId: string, verificationCode: string): Promise<boolean> {
+    try {
+      // First verify the TOTP code
+      const isValid = await this.verifyTOTP(userId, verificationCode);
+      
+      if (isValid) {
+        // Enable MFA and TOTP for the user in security settings
+        await this.updateSecuritySettings(userId, {
+          mfaEnabled: true,
+          totpEnabled: true,
+        });
+
+        // Update the user data stored by ID
+        const userDataById = await SecureStore.getItemAsync(`user_id_${userId}`);
+        if (userDataById) {
+          const userData = JSON.parse(userDataById);
+          userData.user.securitySettings.mfaEnabled = true;
+          userData.user.securitySettings.totpEnabled = true;
+          await SecureStore.setItemAsync(`user_id_${userId}`, JSON.stringify(userData));
+          
+          // Also update the user data stored by email
+          const encodedEmail = this.encodeKeyForSecureStore(userData.user.email);
+          await SecureStore.setItemAsync(`user_${encodedEmail}`, JSON.stringify(userData));
+          
+          console.log('MFA enabled for user:', {
+            userId,
+            email: userData.user.email,
+            mfaEnabled: userData.user.securitySettings.mfaEnabled,
+            totpEnabled: userData.user.securitySettings.totpEnabled
+          });
+        }
+
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      throw new Error(`TOTP setup completion failed: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Check if user has MFA enabled (for debugging)
+   */
+  async checkUserMFAStatus(email: string): Promise<{ mfaEnabled: boolean; totpEnabled: boolean; userFound: boolean }> {
+    try {
+      const userData = await this.getUserByEmail(email);
+      if (!userData) {
+        return { mfaEnabled: false, totpEnabled: false, userFound: false };
+      }
+
+      console.log('User MFA Status Check:', {
+        email,
+        mfaEnabled: userData.user.securitySettings.mfaEnabled,
+        totpEnabled: userData.user.securitySettings.totpEnabled,
+        securitySettings: userData.user.securitySettings
+      });
+
+      return {
+        mfaEnabled: userData.user.securitySettings.mfaEnabled,
+        totpEnabled: userData.user.securitySettings.totpEnabled,
+        userFound: true
+      };
+    } catch (error) {
+      console.error('MFA Status Check Error:', error);
+      return { mfaEnabled: false, totpEnabled: false, userFound: false };
     }
   }
 
@@ -633,7 +712,12 @@ class AuthService {
     // Store encrypted user data in secure storage
     const userData = { user, hash, salt, createdAt: new Date().toISOString() };
     const encodedEmail = this.encodeKeyForSecureStore(user.email);
+    
+    // Store by email (for login lookup)
     await SecureStore.setItemAsync(`user_${encodedEmail}`, JSON.stringify(userData));
+    
+    // Store by user ID (for quick user lookup by ID)
+    await SecureStore.setItemAsync(`user_id_${user.id}`, JSON.stringify(userData));
   }
 
   private async getUserByEmail(email: string): Promise<{ user: User; hash: string; salt: string } | null> {
@@ -648,8 +732,15 @@ class AuthService {
 
   private async getUserById(userId: string): Promise<User | null> {
     try {
+      // First try to find user by ID in the storage
       const userData = await SecureStore.getItemAsync(`user_id_${userId}`);
-      return userData ? JSON.parse(userData).user : null;
+      if (userData) {
+        return JSON.parse(userData).user;
+      }
+
+      // If not found by ID, we need to search through all users
+      // This is a fallback for when user was stored by email only
+      return null;
     } catch {
       return null;
     }

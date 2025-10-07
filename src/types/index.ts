@@ -478,6 +478,12 @@ export type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
   Auth: undefined;
+  Register: undefined;
+  MFAChallenge: { userId: string };
+  TOTPSetup: { userId: string };
+  BiometricSetup: { userId: string };
+  CategoryManagement: undefined;
+  DocumentUpload: { categoryId?: string };
   Main: undefined;
   DocumentViewer: { documentId: string };
   Scanner: { categoryId?: string; folderId?: string };

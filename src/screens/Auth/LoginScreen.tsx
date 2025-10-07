@@ -4,7 +4,9 @@
  */
 
 // @ts-nocheck
-import React, { useState, useRef } from 'react';
+import * as React from 'react';
+
+const { useState, useRef } = React;
 import {
   View,
   Text,
@@ -18,6 +20,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useDispatch } from 'react-redux';
+import { useNavigation } from '@react-navigation/native';
 import AuthService from '../../services/auth/AuthService';
 import { loginSuccess } from '../../store/slices/authSlice';
 import type { User, AuthToken } from '../../types/minimal';
@@ -34,6 +37,7 @@ const validateEmail = (email: string): boolean => {
 
 export const LoginScreen = ({ onLoginSuccess, onNavigateToRegister }: LoginScreenProps) => {
   const dispatch = useDispatch();
+  const navigation = useNavigation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -74,30 +78,19 @@ export const LoginScreen = ({ onLoginSuccess, onNavigateToRegister }: LoginScree
       });
 
       if (result.mfaRequired) {
-        Alert.alert(
-          'MFA Required',
-          'Multi-factor authentication is enabled. Please enter your verification code.',
-          [{ text: 'OK' }]
-        );
-        // TODO: Navigate to MFA screen
+        // Navigate to MFA Challenge screen
+        navigation.navigate('MFAChallenge', { userId: result.user.id });
       } else {
         // Dispatch Redux actions
         dispatch(loginSuccess({ user: result.user, token: result.token }));
 
-        Alert.alert(
-          'Success!',
-          'Login successful',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                if (onLoginSuccess) {
-                  onLoginSuccess(result.user, result.token);
-                }
-              },
-            },
-          ]
-        );
+        // Navigate to main app
+        navigation.navigate('Main');
+        
+        // Optional callback for parent components
+        if (onLoginSuccess) {
+          onLoginSuccess(result.user, result.token);
+        }
       }
     } catch (error) {
       Alert.alert(
@@ -183,7 +176,7 @@ export const LoginScreen = ({ onLoginSuccess, onNavigateToRegister }: LoginScree
 
           <TouchableOpacity
             style={styles.linkButton}
-            onPress={onNavigateToRegister}
+            onPress={() => navigation.navigate('Register')}
             disabled={loading}
           >
             <Text style={styles.linkText}>Don't have an account? Sign Up</Text>

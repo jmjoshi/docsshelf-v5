@@ -4,7 +4,9 @@
  */
 
 // @ts-nocheck
-import React, { useState, useRef } from 'react';
+import * as React from 'react';
+
+const { useState, useRef } = React;
 import {
   View,
   Text,
@@ -18,6 +20,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useDispatch } from 'react-redux';
+import { useNavigation } from '@react-navigation/native';
 import AuthService from '../../services/auth/AuthService';
 import { registerSuccess } from '../../store/slices/authSlice';
 import type { User, AuthToken } from '../../types/minimal';
@@ -53,6 +56,7 @@ const validatePassword = (password: string): { valid: boolean; message?: string 
 
 export const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }: RegisterScreenProps) => {
   const dispatch = useDispatch();
+  const navigation = useNavigation();
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -129,13 +133,22 @@ export const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }: Registe
 
       Alert.alert(
         'Registration Successful!',
-        'Your account has been created successfully.',
+        'Your account has been created successfully. Let\'s set up two-factor authentication for enhanced security.',
         [
           {
-            text: 'OK',
+            text: 'Set Up MFA',
+            onPress: () => {
+              navigation.navigate('TOTPSetup', { userId: result.user.id });
+            },
+          },
+          {
+            text: 'Skip for Now',
+            style: 'cancel',
             onPress: () => {
               if (onRegisterSuccess) {
                 onRegisterSuccess(result.user, result.token);
+              } else {
+                navigation.navigate('Main');
               }
             },
           },
@@ -294,7 +307,7 @@ export const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }: Registe
 
           <TouchableOpacity
             style={styles.linkButton}
-            onPress={onNavigateToLogin}
+            onPress={() => navigation.goBack()}
             disabled={loading}
           >
             <Text style={styles.linkText}>Already have an account? Sign In</Text>
