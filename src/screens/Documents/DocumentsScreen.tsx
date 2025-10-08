@@ -38,7 +38,7 @@ export const DocumentsScreen = ({ route, navigation }: any) => {
 
     try {
       dispatch(setLoading(true));
-      const docs = await DatabaseService.getDocumentsByCategory(categoryId);
+      const docs = await DatabaseService.getInstance().getDocumentsByCategory(categoryId);
       setCategoryDocs(docs);
       dispatch(setDocuments(docs));
     } catch (error) {

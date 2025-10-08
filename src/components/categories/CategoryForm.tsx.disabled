@@ -1,0 +1,466 @@
+/**
+ * CategoryForm Component
+ * Reusable form component for creating and editing categories
+ * Includes validation, icon/color selection, and parent category selection
+ */
+
+// @ts-nocheck
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+} from 'react-native';
+import { Category } from '../../services/database/DatabaseService';
+import CategoryPicker from './CategoryPicker';
+
+interface CategoryFormProps {
+  category?: Category | null; // If editing, pass existing category
+  categories: Category[]; // All available categories for parent selection
+  onSave: (categoryData: CategoryFormData) => void;
+  onCancel: () => void;
+  loading?: boolean;
+}
+
+export interface CategoryFormData {
+  name: string;
+  icon: string;
+  color: string;
+  parentId: string | null;
+}
+
+const CATEGORY_ICONS = [
+  { key: 'folder', emoji: '📁', name: 'Folder' },
+  { key: 'documents', emoji: '📄', name: 'Documents' },
+  { key: 'work', emoji: '💼', name: 'Work' },
+  { key: 'personal', emoji: '🏠', name: 'Personal' },
+  { key: 'finance', emoji: '💰', name: 'Finance' },
+  { key: 'health', emoji: '🏥', name: 'Health' },
+  { key: 'education', emoji: '🎓', name: 'Education' },
+  { key: 'travel', emoji: '✈️', name: 'Travel' },
+  { key: 'legal', emoji: '⚖️', name: 'Legal' },
+  { key: 'shopping', emoji: '🛍️', name: 'Shopping' },
+  { key: 'utilities', emoji: '🔧', name: 'Utilities' },
+  { key: 'entertainment', emoji: '🎬', name: 'Entertainment' },
+];
+
+const CATEGORY_COLORS = [
+  { key: 'blue', color: '#4A90E2', name: 'Blue' },
+  { key: 'red', color: '#E74C3C', name: 'Red' },
+  { key: 'green', color: '#2ECC71', name: 'Green' },
+  { key: 'orange', color: '#F39C12', name: 'Orange' },
+  { key: 'purple', color: '#9B59B6', name: 'Purple' },
+  { key: 'teal', color: '#1ABC9C', name: 'Teal' },
+  { key: 'gray', color: '#34495E', name: 'Gray' },
+  { key: 'pink', color: '#E91E63', name: 'Pink' },
+  { key: 'indigo', color: '#3F51B5', name: 'Indigo' },
+  { key: 'cyan', color: '#00BCD4', name: 'Cyan' },
+];
+
+export const CategoryForm: React.FC<CategoryFormProps> = ({
+  category,
+  categories,
+  onSave,
+  onCancel,
+  loading = false,
+}) => {
+  const [name, setName] = useState('');
+  const [selectedIcon, setSelectedIcon] = useState('folder');
+  const [selectedColor, setSelectedColor] = useState('#4A90E2');
+  const [parentCategory, setParentCategory] = useState<Category | null>(null);
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
+  useEffect(() => {
+    if (category) {
+      // Editing existing category
+      setName(category.name);
+      setSelectedIcon(category.icon);
+      setSelectedColor(category.color);
+      
+      if (category.parentId) {
+        const parent = categories.find(cat => cat.id === category.parentId);
+        setParentCategory(parent || null);
+      }
+    } else {
+      // Creating new category
+      resetForm();
+    }
+  }, [category, categories]);
+
+  const resetForm = () => {
+    setName('');
+    setSelectedIcon('folder');
+    setSelectedColor('#4A90E2');
+    setParentCategory(null);
+    setErrors({});
+  };
+
+  const validateForm = (): boolean => {
+    const newErrors: { [key: string]: string } = {};
+
+    // Name validation
+    if (!name.trim()) {
+      newErrors.name = 'Category name is required';
+    } else if (name.trim().length < 2) {
+      newErrors.name = 'Category name must be at least 2 characters';
+    } else if (name.trim().length > 50) {
+      newErrors.name = 'Category name must be less than 50 characters';
+    }
+
+    // Check for duplicate names at the same level
+    const existingCategory = categories.find(cat => 
+      cat.name.toLowerCase().trim() === name.toLowerCase().trim() &&
+      cat.parentId === (parentCategory?.id || null) &&
+      cat.id !== category?.id // Exclude current category when editing
+    );
+
+    if (existingCategory) {
+      newErrors.name = 'A category with this name already exists at this level';
+    }
+
+    // Prevent setting parent as self or descendant
+    if (category && parentCategory) {
+      if (parentCategory.id === category.id) {
+        newErrors.parent = 'A category cannot be its own parent';
+      } else if (isDescendant(category.id, parentCategory.id)) {
+        newErrors.parent = 'Cannot set a descendant category as parent';
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const isDescendant = (ancestorId: string, categoryId: string): boolean => {
+    const category = categories.find(cat => cat.id === categoryId);
+    if (!category || !category.parentId) return false;
+    
+    if (category.parentId === ancestorId) return true;
+    return isDescendant(ancestorId, category.parentId);
+  };
+
+  const handleSave = () => {
+    if (!validateForm()) {
+      return;
+    }
+
+    const categoryData: CategoryFormData = {
+      name: name.trim(),
+      icon: selectedIcon,
+      color: selectedColor,
+      parentId: parentCategory?.id || null,
+    };
+
+    onSave(categoryData);
+  };
+
+  const getCategoryIcon = (iconKey: string) => {
+    const iconObj = CATEGORY_ICONS.find(icon => icon.key === iconKey);
+    return iconObj ? iconObj.emoji : '📁';
+  };
+
+  // Filter out current category and its descendants from parent selection
+  const getAvailableParentCategories = () => {
+    if (!category) return categories;
+    
+    return categories.filter(cat => {
+      // Exclude self
+      if (cat.id === category.id) return false;
+      
+      // Exclude descendants
+      return !isDescendant(category.id, cat.id);
+    });
+  };
+
+  return (
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <View style={styles.form}>
+        {/* Category Name */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Category Name</Text>
+          <TextInput
+            style={[
+              styles.input,
+              errors.name && styles.inputError
+            ]}
+            value={name}
+            onChangeText={(text) => {
+              setName(text);
+              if (errors.name) {
+                setErrors(prev => ({ ...prev, name: '' }));
+              }
+            }}
+            placeholder="Enter category name"
+            maxLength={50}
+            autoFocus={!category}
+          />
+          {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
+        </View>
+
+        {/* Parent Category */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Parent Category (Optional)</Text>
+          <CategoryPicker
+            selectedCategoryId={parentCategory?.id || null}
+            onCategorySelect={setParentCategory}
+            placeholder="Select parent category"
+            allowNull={true}
+            categories={getAvailableParentCategories()}
+          />
+          {errors.parent && <Text style={styles.errorText}>{errors.parent}</Text>}
+        </View>
+
+        {/* Icon Selection */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Icon</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.iconScrollContainer}
+          >
+            <View style={styles.iconGrid}>
+              {CATEGORY_ICONS.map((iconObj) => (
+                <TouchableOpacity
+                  key={iconObj.key}
+                  style={[
+                    styles.iconOption,
+                    selectedIcon === iconObj.key && styles.iconOptionSelected,
+                  ]}
+                  onPress={() => setSelectedIcon(iconObj.key)}
+                >
+                  <Text style={styles.iconOptionText}>{iconObj.emoji}</Text>
+                  <Text style={styles.iconOptionLabel}>{iconObj.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+
+        {/* Color Selection */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Color</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.colorScrollContainer}
+          >
+            <View style={styles.colorGrid}>
+              {CATEGORY_COLORS.map((colorObj) => (
+                <TouchableOpacity
+                  key={colorObj.key}
+                  style={[
+                    styles.colorOption,
+                    { backgroundColor: colorObj.color },
+                    selectedColor === colorObj.color && styles.colorOptionSelected,
+                  ]}
+                  onPress={() => setSelectedColor(colorObj.color)}
+                >
+                  <Text style={styles.colorOptionLabel}>{colorObj.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+
+        {/* Preview */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Preview</Text>
+          <View style={styles.preview}>
+            <View style={[styles.previewIcon, { backgroundColor: selectedColor }]}>
+              <Text style={styles.previewIconText}>{getCategoryIcon(selectedIcon)}</Text>
+            </View>
+            <Text style={styles.previewText}>
+              {name.trim() || 'Category name'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, styles.cancelButton]}
+            onPress={onCancel}
+            disabled={loading}
+          >
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[
+              styles.button, 
+              styles.saveButton,
+              loading && styles.saveButtonDisabled
+            ]}
+            onPress={handleSave}
+            disabled={loading}
+          >
+            <Text style={styles.saveButtonText}>
+              {loading ? 'Saving...' : (category ? 'Update' : 'Create')}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+  },
+  form: {
+    padding: 20,
+  },
+  formGroup: {
+    marginBottom: 24,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: '#333333',
+  },
+  inputError: {
+    borderColor: '#E74C3C',
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#E74C3C',
+    marginTop: 4,
+  },
+  iconScrollContainer: {
+    marginTop: 8,
+  },
+  iconGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 4,
+  },
+  iconOption: {
+    width: 64,
+    height: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    backgroundColor: '#fff',
+    paddingVertical: 8,
+  },
+  iconOptionSelected: {
+    borderColor: '#4A90E2',
+    backgroundColor: '#E3F2FD',
+  },
+  iconOptionText: {
+    fontSize: 24,
+    marginBottom: 4,
+  },
+  iconOptionLabel: {
+    fontSize: 10,
+    color: '#666666',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  colorScrollContainer: {
+    marginTop: 8,
+  },
+  colorGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 4,
+  },
+  colorOption: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 3,
+    borderColor: 'transparent',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingBottom: 4,
+  },
+  colorOptionSelected: {
+    borderColor: '#333333',
+  },
+  colorOptionLabel: {
+    fontSize: 9,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  preview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  previewIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  previewIconText: {
+    fontSize: 20,
+  },
+  previewText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333333',
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  button: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#F5F5F5',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  cancelButtonText: {
+    color: '#666666',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveButton: {
+    backgroundColor: '#4A90E2',
+  },
+  saveButtonDisabled: {
+    backgroundColor: '#A0C8F0',
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
+
+export default CategoryForm;

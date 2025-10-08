@@ -1,0 +1,367 @@
+/**
+ * CategoryPicker Component
+ * Reusable component for selecting categories in document upload/assignment
+ * Supports hierarchical category display and selection
+ */
+
+// @ts-nocheck
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Modal,
+  FlatList,
+  ScrollView,
+} from 'react-native';
+import { useSelector, useDispatch } from 'react-redux';
+import DatabaseService, { Category } from '../../services/database/DatabaseService';
+import { setCategories } from '../../store/slices/documentSlice';
+
+interface CategoryPickerProps {
+  selectedCategoryId?: string | null;
+  onCategorySelect: (category: Category | null) => void;
+  placeholder?: string;
+  allowNull?: boolean; // Allow "No Category" selection
+  style?: any;
+  categories?: Category[]; // Allow passing categories directly
+}
+
+const CATEGORY_ICONS = [
+  { key: 'folder', emoji: '📁', name: 'Folder' },
+  { key: 'documents', emoji: '📄', name: 'Documents' },
+  { key: 'work', emoji: '💼', name: 'Work' },
+  { key: 'personal', emoji: '🏠', name: 'Personal' },
+  { key: 'finance', emoji: '💰', name: 'Finance' },
+  { key: 'health', emoji: '🏥', name: 'Health' },
+  { key: 'education', emoji: '🎓', name: 'Education' },
+  { key: 'travel', emoji: '✈️', name: 'Travel' },
+  { key: 'legal', emoji: '⚖️', name: 'Legal' },
+  { key: 'shopping', emoji: '🛍️', name: 'Shopping' },
+  { key: 'utilities', emoji: '🔧', name: 'Utilities' },
+  { key: 'entertainment', emoji: '🎬', name: 'Entertainment' },
+];
+
+export const CategoryPicker: React.FC<CategoryPickerProps> = ({
+  selectedCategoryId,
+  onCategorySelect,
+  placeholder = 'Select Category',
+  allowNull = true,
+  style,
+  categories: propCategories,
+}) => {
+  const dispatch = useDispatch();
+  const { categories: storeCategories } = useSelector((state: any) => state.document);
+  const { user } = useSelector((state: any) => state.auth);
+  
+  // Use prop categories if provided, otherwise use store categories
+  const categories = propCategories || storeCategories;
+  
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+
+  useEffect(() => {
+    if (!propCategories) {
+      loadCategories();
+    }
+  }, [propCategories]);
+
+  useEffect(() => {
+    if (selectedCategoryId) {
+      const category = categories.find((cat: Category) => cat.id === selectedCategoryId);
+      setSelectedCategory(category || null);
+    } else {
+      setSelectedCategory(null);
+    }
+  }, [selectedCategoryId, categories]);
+
+  const loadCategories = async () => {
+    if (!user || propCategories) return;
+
+    try {
+      const allCategories = await DatabaseService.getCategoryTree(user.id);
+      dispatch(setCategories(allCategories));
+    } catch (error) {
+      console.error('Failed to load categories:', error);
+    }
+  };
+
+  const getCategoryIcon = (iconKey: string) => {
+    const iconObj = CATEGORY_ICONS.find(icon => icon.key === iconKey);
+    return iconObj ? iconObj.emoji : '📁';
+  };
+
+  const handleCategorySelect = (category: Category | null) => {
+    setSelectedCategory(category);
+    onCategorySelect(category);
+    setModalVisible(false);
+  };
+
+  const buildCategoryTree = () => {
+    const tree: any[] = [];
+    const categoryMap = new Map();
+
+    // Create map of all categories
+    categories.forEach((cat: Category) => {
+      categoryMap.set(cat.id, { ...cat, children: [] });
+    });
+
+    // Build tree structure
+    categories.forEach((cat: Category) => {
+      const categoryWithChildren = categoryMap.get(cat.id);
+      if (cat.parentId) {
+        const parent = categoryMap.get(cat.parentId);
+        if (parent) {
+          parent.children.push(categoryWithChildren);
+        }
+      } else {
+        tree.push(categoryWithChildren);
+      }
+    });
+
+    return tree;
+  };
+
+  const renderCategoryTree = (categories: any[], depth: number = 0): React.ReactNode[] => {
+    return categories.flatMap((category) => {
+      const items = [
+        <TouchableOpacity
+          key={category.id}
+          style={[
+            styles.categoryOption,
+            { marginLeft: depth * 20 },
+            selectedCategory?.id === category.id && styles.categoryOptionSelected
+          ]}
+          onPress={() => handleCategorySelect(category)}
+        >
+          <View style={[styles.categoryIcon, { backgroundColor: category.color }]}>
+            <Text style={styles.categoryIconText}>{getCategoryIcon(category.icon)}</Text>
+          </View>
+          <Text style={styles.categoryOptionText}>{category.name}</Text>
+        </TouchableOpacity>
+      ];
+
+      if (category.children && category.children.length > 0) {
+        items.push(...renderCategoryTree(category.children, depth + 1));
+      }
+
+      return items;
+    });
+  };
+
+  const categoryTree = buildCategoryTree();
+
+  return (
+    <View style={[styles.container, style]}>
+      <TouchableOpacity
+        style={styles.picker}
+        onPress={() => setModalVisible(true)}
+      >
+        {selectedCategory ? (
+          <View style={styles.selectedCategoryDisplay}>
+            <View style={[styles.selectedCategoryIcon, { backgroundColor: selectedCategory.color }]}>
+              <Text style={styles.selectedCategoryIconText}>
+                {getCategoryIcon(selectedCategory.icon)}
+              </Text>
+            </View>
+            <Text style={styles.selectedCategoryText}>{selectedCategory.name}</Text>
+          </View>
+        ) : (
+          <Text style={styles.placeholderText}>{placeholder}</Text>
+        )}
+        <Text style={styles.pickerArrow}>▼</Text>
+      </TouchableOpacity>
+
+      <Modal
+        visible={modalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Category</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setModalVisible(false)}
+              >
+                <Text style={styles.closeButtonText}>×</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.categoriesList}>
+              {allowNull && (
+                <TouchableOpacity
+                  style={[
+                    styles.categoryOption,
+                    !selectedCategory && styles.categoryOptionSelected
+                  ]}
+                  onPress={() => handleCategorySelect(null)}
+                >
+                  <View style={styles.noCategoryIcon}>
+                    <Text style={styles.categoryIconText}>📂</Text>
+                  </View>
+                  <Text style={styles.categoryOptionText}>No Category</Text>
+                </TouchableOpacity>
+              )}
+
+              {categoryTree.length > 0 ? (
+                renderCategoryTree(categoryTree)
+              ) : (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateText}>No categories available</Text>
+                  <Text style={styles.emptyStateSubtext}>
+                    Create categories in the Category Management screen
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    marginVertical: 8,
+  },
+  picker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 8,
+    padding: 12,
+    minHeight: 48,
+  },
+  selectedCategoryDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  selectedCategoryIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  selectedCategoryIconText: {
+    fontSize: 14,
+  },
+  selectedCategoryText: {
+    fontSize: 16,
+    color: '#333333',
+    fontWeight: '500',
+  },
+  placeholderText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#999999',
+  },
+  pickerArrow: {
+    fontSize: 12,
+    color: '#666666',
+    marginLeft: 8,
+  },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333333',
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 16,
+    backgroundColor: '#F5F5F5',
+  },
+  closeButtonText: {
+    fontSize: 20,
+    color: '#666666',
+  },
+  categoriesList: {
+    maxHeight: 400,
+    padding: 16,
+  },
+  categoryOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  categoryOptionSelected: {
+    backgroundColor: '#E3F2FD',
+  },
+  categoryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  noCategoryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    backgroundColor: '#F5F5F5',
+  },
+  categoryIconText: {
+    fontSize: 16,
+  },
+  categoryOptionText: {
+    fontSize: 16,
+    color: '#333333',
+    flex: 1,
+  },
+  emptyState: {
+    alignItems: 'center',
+    padding: 32,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666666',
+    marginBottom: 8,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: '#999999',
+    textAlign: 'center',
+  },
+});
+
+export default CategoryPicker;

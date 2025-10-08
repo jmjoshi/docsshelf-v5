@@ -76,8 +76,7 @@ export default function CategoryManagementScreen({ navigation }: any) {
 
     try {
       dispatch(setLoading(true));
-      const dbService = DatabaseService.getInstance();
-      const allCategories = await dbService.getCategoryTree(user.id);
+      const allCategories = await DatabaseService.getCategoryTree(user.id);
       dispatch(setCategories(allCategories));
     } catch (error) {
       console.error('Failed to load categories:', error);
@@ -121,22 +120,20 @@ export default function CategoryManagementScreen({ navigation }: any) {
 
       if (editingCategory) {
         // Update existing category
-        const dbService = DatabaseService.getInstance();
-        await dbService.updateCategory(editingCategory.id, {
+        await DatabaseService.updateCategory(editingCategory.id, {
           name: categoryName.trim(),
           icon: selectedIcon,
           color: selectedColor,
           parentId: selectedParent,
         });
 
-        const updated = await dbService.getCategoryById(editingCategory.id);
+        const updated = await DatabaseService.getCategoryById(editingCategory.id);
         if (updated) {
           dispatch(updateCategoryAction(updated));
         }
       } else {
         // Create new category
-        const dbService = DatabaseService.getInstance();
-        const newCategory = await dbService.createCategory({
+        const newCategory = await DatabaseService.createCategory({
           name: categoryName.trim(),
           icon: selectedIcon,
           color: selectedColor,
@@ -169,8 +166,7 @@ export default function CategoryManagementScreen({ navigation }: any) {
           onPress: async () => {
             try {
               dispatch(setLoading(true));
-              const dbService = DatabaseService.getInstance();
-              await dbService.deleteCategory(category.id);
+              await DatabaseService.deleteCategory(category.id);
               dispatch(removeCategoryAction(category.id));
               Alert.alert('Success', 'Category deleted successfully');
             } catch (error) {
@@ -207,41 +203,10 @@ export default function CategoryManagementScreen({ navigation }: any) {
           <Text style={styles.emptySubtext}>Create your first category to organize documents</Text>
         </View>
       ) : (
-        <ScrollView style={styles.categoriesList}>
-          {categories.map((category) => (
-            <View key={category.id} style={styles.categoryItem}>
-              <View style={styles.categoryHeader}>
-                <Text style={styles.categoryIcon}>{CATEGORY_ICONS.find(icon => icon.key === category.icon)?.emoji || '📁'}</Text>
-                <View style={styles.categoryInfo}>
-                  <Text style={styles.categoryName}>{category.name}</Text>
-                  <Text style={styles.categoryCount}>
-                    {category.documentCount || 0} documents
-                  </Text>
-                </View>
-                <View 
-                  style={[
-                    styles.categoryColorBadge, 
-                    { backgroundColor: category.color }
-                  ]} 
-                />
-              </View>
-              <View style={styles.categoryActions}>
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => openEditModal(category)}
-                >
-                  <Text style={styles.actionButtonText}>Edit</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.deleteButton]}
-                  onPress={() => handleDeleteCategory(category)}
-                >
-                  <Text style={[styles.actionButtonText, styles.deleteButtonText]}>Delete</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-        </ScrollView>
+        <View style={styles.loadingContainer}>
+          <Text>Categories: {categories.length}</Text>
+          <Text>CategoryTree component temporarily disabled for debugging</Text>
+        </View>
       )}
 
       {/* Category Modal */}
@@ -384,70 +349,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999999',
     textAlign: 'center',
-  },
-  categoriesList: {
-    flex: 1,
-    padding: 16,
-  },
-  categoryItem: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  categoryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  categoryIcon: {
-    fontSize: 32,
-    marginRight: 12,
-  },
-  categoryInfo: {
-    flex: 1,
-  },
-  categoryName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333333',
-    marginBottom: 4,
-  },
-  categoryCount: {
-    fontSize: 14,
-    color: '#666666',
-  },
-  categoryColorBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-  },
-  categoryActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-  },
-  actionButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-    backgroundColor: '#4A90E2',
-  },
-  actionButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  deleteButton: {
-    backgroundColor: '#E74C3C',
-  },
-  deleteButtonText: {
-    color: '#FFFFFF',
   },
 
 

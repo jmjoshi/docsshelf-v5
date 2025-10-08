@@ -4,9 +4,9 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 // Screens
 import HomeScreen from '../screens/HomeScreen';
-import { DocumentsScreen } from '../screens/Documents/DocumentsScreen';
+import { DocumentsScreen } from '../screens/Documents/DocumentsScreen.simple';
 import { SettingsScreen } from '../screens/Settings/SettingsScreen';
-import CategoryManagementScreen from '../screens/Documents/CategoryManagementScreen';
+import CategoryManagementScreen from '../screens/Documents/CategoryManagementScreen.simple';
 import DocumentUploadScreen from '../screens/Documents/DocumentUploadScreen';
 import { LoginScreen } from '../screens/Auth/LoginScreen';
 import { RegisterScreen } from '../screens/Auth/RegisterScreen';

@@ -45,7 +45,7 @@ export default function DocumentUploadScreen({ route, navigation }: any) {
   useEffect(() => {
     // Load categories if not already loaded
     if (categories.length === 0 && user) {
-      DatabaseService.getCategoryTree(user.id).then((cats) => {
+      DatabaseService.getInstance().getCategoryTree(user.id).then((cats) => {
         dispatch({ type: 'document/setCategories', payload: cats });
       });
     }
@@ -60,13 +60,13 @@ export default function DocumentUploadScreen({ route, navigation }: any) {
     }
 
     try {
-      const files = await DocumentUploadService.pickDocuments({
-        allowMultiSelection: true,
-      });
+      const files = await DocumentUploadService.pickDocuments();
 
       if (files.length === 0) {
         return; // User cancelled
       }
+
+      console.log('📁 Picked files:', files.map(f => ({ name: f.name, size: f.size, type: f.type, mimeType: f.mimeType })));
 
       setIsUploading(true);
 
@@ -88,11 +88,15 @@ export default function DocumentUploadScreen({ route, navigation }: any) {
         const file = files[i];
         
         try {
-          const result = await DocumentUploadService.uploadDocument(file, {
+          const result = await DocumentUploadService.uploadDocument({
+            file: {
+              uri: file.uri,
+              name: file.name,
+              type: file.type || file.mimeType,
+              size: file.size,
+            },
             categoryId: selectedCategory,
             userId: user.id,
-            encrypt: true,
-            allowDuplicates: false,
             onProgress: (progress) => {
               setUploads(prev =>
                 prev.map(item =>
@@ -102,29 +106,27 @@ export default function DocumentUploadScreen({ route, navigation }: any) {
             },
           });
 
-          if (result.success && result.documentId) {
+          if (result.success && result.document) {
             // Update upload item with document ID
             setUploads(prev =>
               prev.map(item =>
-                item.fileName === file.name ? { ...item, documentId: result.documentId } : item
+                item.fileName === file.name ? { ...item, documentId: result.document.id } : item
               )
             );
 
-            // Load the document and add to Redux
-            const doc = await DatabaseService.getDocumentById(result.documentId);
-            if (doc) {
-              dispatch(addDocument(doc));
-            }
+            // Add the document directly to Redux (no need to fetch from DB again)
+            dispatch(addDocument(result.document));
 
             results.push({ success: true, fileName: file.name });
           } else {
             results.push({ success: false, fileName: file.name, error: result.error });
           }
         } catch (error) {
-          console.error(`Upload error for ${file.name}:`, error);
+          const fileName = file?.name || 'Unknown file';
+          console.error(`Upload error for ${fileName}:`, error);
           results.push({
             success: false,
-            fileName: file.name,
+            fileName: fileName,
             error: error instanceof Error ? error.message : 'Unknown error',
           });
         }

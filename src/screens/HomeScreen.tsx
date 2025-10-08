@@ -1,10 +1,43 @@
 // @ts-nocheck
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useSelector } from 'react-redux';
+import DatabaseService from '../services/database/DatabaseService';
 
 const HomeScreen = ({ navigation }: any) => {
   const { user } = useSelector((state: any) => state.auth);
+  const [stats, setStats] = useState({
+    documents: 0,
+    categories: 0,
+    scanned: 0,
+  });
+
+  useEffect(() => {
+    if (user?.id) {
+      loadStats();
+    }
+  }, [user?.id]);
+
+  const loadStats = async () => {
+    try {
+      const dbService = DatabaseService.getInstance();
+      
+      // Get total document count
+      const documentCount = await dbService.getTotalDocumentCount(user?.id || '');
+      
+      // Get category count
+      const categories = await dbService.getCategoryTree(user?.id || '');
+      const categoryCount = categories.length;
+      
+      setStats({
+        documents: documentCount,
+        categories: categoryCount,
+        scanned: 0, // TODO: Add scanned document tracking
+      });
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    }
+  };
 
   const features = [
     {
@@ -83,15 +116,15 @@ const HomeScreen = ({ navigation }: any) => {
 
       <View style={styles.statsContainer}>
         <View style={styles.statCard}>
-          <Text style={styles.statNumber}>0</Text>
+          <Text style={styles.statNumber}>{stats.documents}</Text>
           <Text style={styles.statLabel}>Documents</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statNumber}>0</Text>
+          <Text style={styles.statNumber}>{stats.categories}</Text>
           <Text style={styles.statLabel}>Categories</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statNumber}>0</Text>
+          <Text style={styles.statNumber}>{stats.scanned}</Text>
           <Text style={styles.statLabel}>Scanned</Text>
         </View>
       </View>

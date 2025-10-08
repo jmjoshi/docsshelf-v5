@@ -18,6 +18,7 @@ export interface Category {
   createdAt: string;
   updatedAt: string;
   userId: string;
+  documentCount: number;
 }
 
 export interface Document {
@@ -40,7 +41,20 @@ export interface Document {
 }
 
 class DatabaseService {
+  private static instance: DatabaseService | null = null;
   private db: SQLite.SQLiteDatabase | null = null;
+
+  private constructor() {}
+
+  /**
+   * Get singleton instance of DatabaseService
+   */
+  static getInstance(): DatabaseService {
+    if (!DatabaseService.instance) {
+      DatabaseService.instance = new DatabaseService();
+    }
+    return DatabaseService.instance;
+  }
 
   /**
    * Initialize database connection and create tables
@@ -282,11 +296,61 @@ class DatabaseService {
     if (!this.db) throw new Error('Database not initialized');
 
     const result = await this.db.getAllAsync(
-      `SELECT * FROM categories WHERE userId = ? ORDER BY name ASC`,
+      `SELECT c.*, 
+              (SELECT COUNT(*) FROM documents d WHERE d.categoryId = c.id) as documentCount
+       FROM categories c 
+       WHERE c.userId = ? 
+       ORDER BY c.name ASC`,
       [userId]
     );
 
     return result as Category[];
+  }
+
+  /**
+   * Get document count for a specific category
+   */
+  async getDocumentCountByCategory(categoryId: string): Promise<number> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getFirstAsync(
+      `SELECT COUNT(*) as count FROM documents WHERE categoryId = ?`,
+      [categoryId]
+    );
+
+    return (result as any)?.count || 0;
+  }
+
+  /**
+   * Get total document count for a user
+   */
+  async getTotalDocumentCount(userId: string): Promise<number> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getFirstAsync(
+      `SELECT COUNT(*) as count FROM documents WHERE userId = ?`,
+      [userId]
+    );
+
+    return (result as any)?.count || 0;
+  }
+
+  /**
+   * Get all documents for a user (for Documents screen)
+   */
+  async getAllDocuments(userId: string): Promise<Document[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getAllAsync(
+      `SELECT * FROM documents WHERE userId = ? ORDER BY createdAt DESC`,
+      [userId]
+    );
+
+    return (result as any[]).map(doc => ({
+      ...doc,
+      encrypted: doc.encrypted === 1,
+      tags: typeof doc.tags === 'string' ? JSON.parse(doc.tags || '[]') : doc.tags || [],
+    }));
   }
 
   /**
@@ -451,4 +515,4 @@ class DatabaseService {
   }
 }
 
-export default new DatabaseService();
+export default DatabaseService;

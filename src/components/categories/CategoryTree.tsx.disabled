@@ -1,0 +1,304 @@
+/**
+ * CategoryTree Component
+ * Displays hierarchical category structure with expand/collapse functionality
+ * Used in category management and navigation
+ */
+
+// @ts-nocheck
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+} from 'react-native';
+import { Category } from '../../services/database/DatabaseService';
+
+interface CategoryTreeProps {
+  categories: Category[];
+  onCategoryPress?: (category: Category) => void;
+  onCategoryLongPress?: (category: Category) => void;
+  selectedCategoryId?: string | null;
+  showActions?: boolean;
+  onAddSubcategory?: (parentCategory: Category) => void;
+  onEditCategory?: (category: Category) => void;
+  onDeleteCategory?: (category: Category) => void;
+}
+
+const CATEGORY_ICONS = [
+  { key: 'folder', emoji: '📁', name: 'Folder' },
+  { key: 'documents', emoji: '📄', name: 'Documents' },
+  { key: 'work', emoji: '💼', name: 'Work' },
+  { key: 'personal', emoji: '🏠', name: 'Personal' },
+  { key: 'finance', emoji: '💰', name: 'Finance' },
+  { key: 'health', emoji: '🏥', name: 'Health' },
+  { key: 'education', emoji: '🎓', name: 'Education' },
+  { key: 'travel', emoji: '✈️', name: 'Travel' },
+  { key: 'legal', emoji: '⚖️', name: 'Legal' },
+  { key: 'shopping', emoji: '🛍️', name: 'Shopping' },
+  { key: 'utilities', emoji: '🔧', name: 'Utilities' },
+  { key: 'entertainment', emoji: '🎬', name: 'Entertainment' },
+];
+
+export const CategoryTree: React.FC<CategoryTreeProps> = ({
+  categories,
+  onCategoryPress = () => {},
+  onCategoryLongPress = () => {},
+  selectedCategoryId,
+  showActions = false,
+  onAddSubcategory = () => {},
+  onEditCategory = () => {},
+  onDeleteCategory = () => {},
+}) => {
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  const getCategoryIcon = (iconKey: string) => {
+    const iconObj = CATEGORY_ICONS.find(icon => icon.key === iconKey);
+    return iconObj ? iconObj.emoji : '📁';
+  };
+
+  const toggleExpanded = (categoryId: string) => {
+    const newExpanded = new Set(expandedCategories);
+    if (newExpanded.has(categoryId)) {
+      newExpanded.delete(categoryId);
+    } else {
+      newExpanded.add(categoryId);
+    }
+    setExpandedCategories(newExpanded);
+  };
+
+  const buildCategoryTree = () => {
+    const tree: any[] = [];
+    const categoryMap = new Map();
+
+    // Create map of all categories
+    categories.forEach((cat: Category) => {
+      categoryMap.set(cat.id, { ...cat, children: [] });
+    });
+
+    // Build tree structure
+    categories.forEach((cat: Category) => {
+      const categoryWithChildren = categoryMap.get(cat.id);
+      if (cat.parentId) {
+        const parent = categoryMap.get(cat.parentId);
+        if (parent) {
+          parent.children.push(categoryWithChildren);
+        }
+      } else {
+        tree.push(categoryWithChildren);
+      }
+    });
+
+    return tree;
+  };
+
+  const renderCategoryNode = (category: any, depth: number = 0) => {
+    const hasChildren = category.children && category.children.length > 0;
+    const isExpanded = expandedCategories.has(category.id);
+    const isSelected = selectedCategoryId === category.id;
+
+    return (
+      <View key={category.id}>
+        <TouchableOpacity
+          style={[
+            styles.categoryNode,
+            { marginLeft: depth * 16 },
+            isSelected && styles.categoryNodeSelected,
+          ]}
+          onPress={() => onCategoryPress(category)}
+          onLongPress={() => onCategoryLongPress(category)}
+        >
+          <View style={styles.categoryMain}>
+            {hasChildren && (
+              <TouchableOpacity
+                style={styles.expandButton}
+                onPress={() => toggleExpanded(category.id)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.expandIcon}>
+                  {isExpanded ? '▼' : '▶'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            <View style={[styles.categoryIcon, { backgroundColor: category.color }]}>
+              <Text style={styles.categoryIconText}>
+                {getCategoryIcon(category.icon)}
+              </Text>
+            </View>
+
+            <View style={styles.categoryInfo}>
+              <Text style={styles.categoryName}>{category.name}</Text>
+              {hasChildren && (
+                <Text style={styles.subcategoryCount}>
+                  {category.children.length} item{category.children.length !== 1 ? 's' : ''}
+                </Text>
+              )}
+            </View>
+
+            {showActions && (
+              <View style={styles.categoryActions}>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.addButton]}
+                  onPress={() => onAddSubcategory(category)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.actionButtonText}>+</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.editButton]}
+                  onPress={() => onEditCategory(category)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.actionButtonText}>✏️</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.deleteButton]}
+                  onPress={() => onDeleteCategory(category)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.actionButtonText}>🗑️</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+
+        {hasChildren && isExpanded && (
+          <View style={styles.childrenContainer}>
+            {category.children.map((child: any) => (
+              renderCategoryNode(child, depth + 1)
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const categoryTree = buildCategoryTree();
+
+  return (
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {categoryTree.length > 0 ? (
+        categoryTree.map((category) => (
+          renderCategoryNode(category)
+        ))
+      ) : (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateIcon}>📁</Text>
+          <Text style={styles.emptyStateText}>No categories</Text>
+          <Text style={styles.emptyStateSubtext}>
+            Create your first category to organize documents
+          </Text>
+        </View>
+      )}
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  categoryNode: {
+    marginBottom: 2,
+  },
+  categoryNodeSelected: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 8,
+  },
+  categoryMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    minHeight: 48,
+  },
+  expandButton: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  expandIcon: {
+    fontSize: 12,
+    color: '#666666',
+  },
+  categoryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  categoryIconText: {
+    fontSize: 16,
+  },
+  categoryInfo: {
+    flex: 1,
+  },
+  categoryName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333333',
+    marginBottom: 2,
+  },
+  subcategoryCount: {
+    fontSize: 12,
+    color: '#999999',
+  },
+  categoryActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  actionButton: {
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 14,
+  },
+  addButton: {
+    backgroundColor: '#E8F5E8',
+  },
+  editButton: {
+    backgroundColor: '#FFF3E0',
+  },
+  deleteButton: {
+    backgroundColor: '#FFEBEE',
+  },
+  actionButtonText: {
+    fontSize: 12,
+  },
+  childrenContainer: {
+    borderLeftWidth: 1,
+    borderLeftColor: '#E0E0E0',
+    marginLeft: 24,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 48,
+  },
+  emptyStateIcon: {
+    fontSize: 48,
+    marginBottom: 16,
+    opacity: 0.5,
+  },
+  emptyStateText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#666666',
+    marginBottom: 8,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: '#999999',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+});
+
+export default CategoryTree;

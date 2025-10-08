@@ -17,7 +17,7 @@ function AppContent() {
     // Initialize database when app starts
     const initDatabase = async () => {
       try {
-        await DatabaseService.initialize();
+        await DatabaseService.getInstance().initialize();
         console.log('✅ Database initialized successfully');
       } catch (error) {
         console.error('❌ Failed to initialize database:', error);

@@ -234,33 +234,29 @@ class AuthService {
         throw new Error('User not found');
       }
 
-      // Generate TOTP secret
-      const secret = new OTPAuth.Secret({ size: 32 });
-      const totp = new OTPAuth.TOTP({
-        issuer: 'DocsShelf',
-        label: user.email,
-        algorithm: 'SHA1',
-        digits: 6,
-        period: 30,
-        secret: secret,
-      });
+      // Generate TOTP secret using expo-crypto
+      const secretBytes = await Crypto.getRandomBytesAsync(20); // 160 bits = 20 bytes for TOTP
+      const secret = this.base32Encode(Array.from(secretBytes));
 
-      // Generate QR code URL
-      const qrCode = totp.toString();
+      // Create TOTP URI manually (RFC 6238 compliant)
+      const issuer = 'DocsShelf';
+      const label = user.email;
+      const qrCode = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(label)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
 
       // Generate backup codes
       const backupCodes = await this.generateBackupCodes();
 
       // Store TOTP secret securely
-      await this.storeTOTPSecret(userId, secret.base32);
+      await this.storeTOTPSecret(userId, secret);
       await this.storeBackupCodes(userId, backupCodes);
 
       return {
-        secret: secret.base32,
+        secret,
         qrCode,
         backupCodes,
       };
     } catch (error) {
+      console.error('TOTP setup error:', error);
       throw new Error(`TOTP setup failed: ${(error as Error).message}`);
     }
   }
@@ -275,22 +271,15 @@ class AuthService {
         throw new Error('TOTP not configured for user');
       }
 
-      const totp = new OTPAuth.TOTP({
-        issuer: 'DocsShelf',
-        label: userId,
-        algorithm: 'SHA1',
-        digits: 6,
-        period: 30,
-        secret: OTPAuth.Secret.fromBase32(secret),
-      });
-
-      // Allow for time window drift (±1 period)
+      // Manual TOTP verification using HMAC-SHA1
       const currentTime = Math.floor(Date.now() / 1000);
-      const timeWindows = [-30, 0, 30];
+      const timeWindows = [-30, 0, 30]; // Allow for time drift ±1 period
 
       for (const window of timeWindows) {
-        const token = totp.generate({ timestamp: currentTime + window });
-        if (token === code) {
+        const timeSlot = Math.floor((currentTime + window) / 30);
+        const generatedCode = this.generateTOTPCode(secret, timeSlot);
+        
+        if (generatedCode === code) {
           return true;
         }
       }
@@ -298,6 +287,7 @@ class AuthService {
       // Check backup codes if TOTP fails
       return await this.verifyBackupCode(userId, code);
     } catch (error) {
+      console.error('TOTP verification error:', error);
       throw new Error(`TOTP verification failed: ${(error as Error).message}`);
     }
   }
@@ -615,6 +605,105 @@ class AuthService {
     return key.replace(/@/g, '_at_').replace(/\./g, '_dot_');
   }
 
+  /**
+   * Base32 encode function for TOTP secrets
+   */
+  private base32Encode(bytes: number[]): string {
+    const base32Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let result = '';
+    let buffer = 0;
+    let bitsLeft = 0;
+
+    for (const byte of bytes) {
+      buffer = (buffer << 8) | byte;
+      bitsLeft += 8;
+
+      while (bitsLeft >= 5) {
+        result += base32Chars[(buffer >> (bitsLeft - 5)) & 31];
+        bitsLeft -= 5;
+      }
+    }
+
+    if (bitsLeft > 0) {
+      result += base32Chars[(buffer << (5 - bitsLeft)) & 31];
+    }
+
+    return result;
+  }
+
+  /**
+   * Base32 decode function for TOTP secrets
+   */
+  private base32Decode(encoded: string): number[] {
+    const base32Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    const result: number[] = [];
+    let buffer = 0;
+    let bitsLeft = 0;
+
+    for (const char of encoded.toUpperCase()) {
+      const value = base32Chars.indexOf(char);
+      if (value === -1) continue;
+
+      buffer = (buffer << 5) | value;
+      bitsLeft += 5;
+
+      if (bitsLeft >= 8) {
+        result.push((buffer >> (bitsLeft - 8)) & 255);
+        bitsLeft -= 8;
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Generate TOTP code using HMAC-SHA1
+   */
+  private generateTOTPCode(secret: string, timeSlot: number): string {
+    try {
+      // Decode base32 secret
+      const secretBytes = this.base32Decode(secret);
+      
+      // Convert time slot to 8-byte big-endian
+      const timeBuffer = new ArrayBuffer(8);
+      const timeView = new DataView(timeBuffer);
+      timeView.setUint32(4, timeSlot, false); // big-endian
+
+      // Convert to hex string for CryptoJS
+      const secretHex = secretBytes.map(b => b.toString(16).padStart(2, '0')).join('');
+      const timeHex = Array.from(new Uint8Array(timeBuffer))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+
+      // Compute HMAC-SHA1
+      const hmac = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(timeHex), CryptoJS.enc.Hex.parse(secretHex));
+      const hmacBytes = this.hexToBytes(hmac.toString());
+
+      // Dynamic truncation (RFC 4226)
+      const offset = hmacBytes[19] & 0xf;
+      const code = ((hmacBytes[offset] & 0x7f) << 24) |
+                   ((hmacBytes[offset + 1] & 0xff) << 16) |
+                   ((hmacBytes[offset + 2] & 0xff) << 8) |
+                   (hmacBytes[offset + 3] & 0xff);
+
+      // Return 6-digit code with leading zeros
+      return (code % 1000000).toString().padStart(6, '0');
+    } catch (error) {
+      console.error('TOTP code generation error:', error);
+      return '000000';
+    }
+  }
+
+  /**
+   * Convert hex string to byte array
+   */
+  private hexToBytes(hex: string): number[] {
+    const bytes = [];
+    for (let i = 0; i < hex.length; i += 2) {
+      bytes.push(parseInt(hex.substr(i, 2), 16));
+    }
+    return bytes;
+  }
+
   private async generateSecureId(): Promise<string> {
     const randomBytes = await Crypto.getRandomBytesAsync(16);
     return Array.from(randomBytes)
@@ -770,7 +859,19 @@ class AuthService {
   }
 
   private async generateBackupCodes(): Promise<string[]> {
-    return ['backup1', 'backup2', 'backup3'];
+    const codes: string[] = [];
+    
+    for (let i = 0; i < 8; i++) {
+      // Generate 8-character backup code
+      const randomBytes = await Crypto.getRandomBytesAsync(4);
+      const code = Array.from(randomBytes)
+        .map(b => b.toString(16).toUpperCase())
+        .join('')
+        .substring(0, 8);
+      codes.push(code);
+    }
+    
+    return codes;
   }
 
   private async storeTOTPSecret(userId: string, secret: string): Promise<void> {
