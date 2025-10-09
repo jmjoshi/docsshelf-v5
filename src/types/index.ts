@@ -483,7 +483,8 @@ export type RootStackParamList = {
   TOTPSetup: { userId: string };
   BiometricSetup: { userId: string };
   CategoryManagement: undefined;
-  DocumentUpload: { categoryId?: string };
+  DocumentUpload: { categoryId?: string; scannedDocuments?: any[] };
+  DocumentScanner: { categoryId?: string; folderId?: string };
   Main: undefined;
   DocumentViewer: { documentId: string };
   Scanner: { categoryId?: string; folderId?: string };

@@ -8,6 +8,7 @@ import { DocumentsScreen } from '../screens/Documents/DocumentsScreen.simple';
 import { SettingsScreen } from '../screens/Settings/SettingsScreen';
 import CategoryManagementScreen from '../screens/Documents/CategoryManagementScreen.simple';
 import DocumentUploadScreen from '../screens/Documents/DocumentUploadScreen';
+import DocumentScannerScreen from '../screens/Documents/DocumentScannerScreen';
 import { LoginScreen } from '../screens/Auth/LoginScreen';
 import { RegisterScreen } from '../screens/Auth/RegisterScreen';
 import TOTPSetupScreen from '../screens/Auth/TOTPSetupScreen';
@@ -51,6 +52,7 @@ export const AppNavigator = () => {
       <Stack.Screen name="BiometricSetup" component={BiometricSetupScreen} />
       <Stack.Screen name="CategoryManagement" component={CategoryManagementScreen} options={{ title: 'Manage Categories' }} />
       <Stack.Screen name="DocumentUpload" component={DocumentUploadScreen} options={{ title: 'Upload Document' }} />
+      <Stack.Screen name="DocumentScanner" component={DocumentScannerScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Main" component={MainTabs} />
     </Stack.Navigator>
   );

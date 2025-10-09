@@ -69,8 +69,8 @@ const HomeScreen = ({ navigation }: any) => {
       title: 'Document Scanner',
       description: 'Scan documents with your camera',
       icon: '📷',
-      route: 'Scanner',
-      available: false,
+      route: 'DocumentScanner',
+      available: true,
     },
     {
       id: 'search',

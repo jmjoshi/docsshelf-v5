@@ -26,7 +26,7 @@ interface UploadItem extends UploadProgress {
 }
 
 export default function DocumentUploadScreen({ route, navigation }: any) {
-  const { categoryId } = route?.params || {};
+  const { categoryId, scannedDocuments } = route?.params || {};
   const dispatch = useDispatch();
   const { user } = useSelector((state: any) => state.auth);
   const { categories } = useSelector((state: any) => state.document);
@@ -50,6 +50,13 @@ export default function DocumentUploadScreen({ route, navigation }: any) {
       });
     }
   }, [user]);
+
+  useEffect(() => {
+    // Handle scanned documents from scanner
+    if (scannedDocuments && scannedDocuments.length > 0) {
+      handleScannedDocuments(scannedDocuments);
+    }
+  }, [scannedDocuments]);
 
   const handlePickDocuments = async () => {
     // Require category selection first
@@ -171,6 +178,118 @@ export default function DocumentUploadScreen({ route, navigation }: any) {
     } catch (error) {
       console.error('Error picking documents:', error);
       Alert.alert('Error', 'Failed to select documents');
+      setIsUploading(false);
+    }
+  };
+
+  const handleScannedDocuments = async (scannedFiles: any[]) => {
+    // Require category selection first
+    if (!selectedCategory) {
+      Alert.alert('Select Category', 'Please select a category for scanned documents');
+      setShowCategoryPicker(true);
+      return;
+    }
+
+    try {
+      console.log('📷 Processing scanned documents:', scannedFiles.length);
+
+      setIsUploading(true);
+
+      // Initialize upload items for scanned documents
+      const initialUploads: UploadItem[] = scannedFiles.map((file) => ({
+        fileId: `scan_${Date.now()}_${file.name}`,
+        fileName: file.name || 'scanned_document.jpg',
+        totalSize: file.size || 0,
+        uploadedSize: 0,
+        percentage: 0,
+        status: 'pending' as const,
+      }));
+
+      setUploads(initialUploads);
+
+      // Upload scanned files
+      const results = [];
+      for (let i = 0; i < scannedFiles.length; i++) {
+        const file = scannedFiles[i];
+        
+        try {
+          const result = await DocumentUploadService.uploadDocument({
+            file: {
+              uri: file.uri,
+              name: file.name,
+              type: file.type || 'image/jpeg',
+              size: file.size || 0,
+            },
+            categoryId: selectedCategory,
+            userId: user.id,
+            onProgress: (progress) => {
+              setUploads(prev =>
+                prev.map(item =>
+                  item.fileName === progress.fileName ? { ...item, ...progress } : item
+                )
+              );
+            },
+          });
+
+          if (result.success && result.document) {
+            setUploads(prev =>
+              prev.map(item =>
+                item.fileName === file.name ? { ...item, documentId: result.document.id } : item
+              )
+            );
+
+            dispatch(addDocument(result.document));
+            results.push({ success: true, fileName: file.name });
+          } else {
+            results.push({ success: false, fileName: file.name, error: result.error });
+          }
+        } catch (error) {
+          const fileName = file?.name || 'Unknown file';
+          console.error(`Upload error for scanned ${fileName}:`, error);
+          results.push({
+            success: false,
+            fileName: fileName,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+      }
+
+      setIsUploading(false);
+
+      // Show results
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.length - successCount;
+
+      if (failCount === 0) {
+        Alert.alert(
+          'Scanned Documents Uploaded',
+          `Successfully uploaded ${successCount} scanned document${successCount === 1 ? '' : 's'}!`,
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Upload Completed with Errors',
+          `Successful: ${successCount}\nFailed: ${failCount}`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                if (successCount > 0) {
+                  navigation.goBack();
+                }
+              },
+            },
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Error processing scanned documents:', error);
+      Alert.alert('Error', 'Failed to process scanned documents');
       setIsUploading(false);
     }
   };
