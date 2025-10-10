@@ -5,6 +5,17 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "jsx": "react-native",
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": ["*"],
+      "@/components/*": ["components/*"],
+      "@/screens/*": ["screens/*"],
+      "@/services/*": ["services/*"],
+      "@/utils/*": ["utils/*"],
+      "@/types": ["types/index"],
+      "@/config/*": ["config/*"],
+      "@/store/*": ["store/*"]
+    }
   }
 }

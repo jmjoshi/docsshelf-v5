@@ -3,7 +3,7 @@
  * Automatically loads the appropriate scanner for current platform
  */
 
-import { loadPlatformComponent } from '@/utils/Platform';
+import { loadPlatformComponent } from '../../utils/Platform';
 
 // Platform-specific component imports
 import DocumentScannerNative from './DocumentScanner.native';

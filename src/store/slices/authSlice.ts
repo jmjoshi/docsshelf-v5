@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import type { AuthState, User, AuthToken, BiometricType } from '@/types';
+import type { AuthState, User, AuthToken, BiometricType } from '../../types';
 
 /**
  * Authentication State Management

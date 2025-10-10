@@ -2,3 +2,4 @@
 export { DocumentDashboard } from './DocumentDashboard';
 export { DocumentReviewHub } from './DocumentReviewHub';
 export { DocumentStorageScreen } from './DocumentStorageScreen';
+export { DocumentViewerScreen } from './DocumentViewerScreen';

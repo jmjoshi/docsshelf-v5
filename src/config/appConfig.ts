@@ -3,8 +3,8 @@
  * Handles different configurations for web, Android, and iOS platforms
  */
 
-import { getPlatformConfig } from '@/utils/Platform';
-import { getEnvConfig } from '@/config/environment';
+import { getPlatformConfig } from '../utils/Platform';
+import { getEnvConfig } from './environment';
 
 export interface PlatformAppConfig {
   name: string;

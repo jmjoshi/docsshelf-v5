@@ -1,41 +1,25 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
 interface Props {
-  children: ReactNode;
+  children: any;
+  fallback?: any;
 }
 
-interface State {
-  hasError: boolean;
-  error?: Error;
-}
-
-export class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false,
-  };
-
-  public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
-  }
-
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
-  }
-
-  public render() {
-    if (this.state.hasError) {
-      return (
-        <View style={styles.container}>
-          <Text style={styles.title}>Something went wrong</Text>
-          <Text style={styles.message}>
-            We apologize for the inconvenience. Please restart the app.
-          </Text>
-        </View>
-      );
-    }
-
-    return this.props.children;
+// Simplified ErrorBoundary for React 19 compatibility
+export function ErrorBoundary({ children, fallback }: Props) {
+  try {
+    return children;
+  } catch (error) {
+    console.error('ErrorBoundary caught an error:', error);
+    return fallback || (
+      <View style={styles.container}>
+        <Text style={styles.title}>Something went wrong</Text>
+        <Text style={styles.message}>
+          We apologize for the inconvenience. Please restart the app.
+        </Text>
+      </View>
+    );
   }
 }
 

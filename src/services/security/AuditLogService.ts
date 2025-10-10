@@ -225,7 +225,7 @@ class AuditLogService {
 
     } catch (error) {
       console.error('Failed to log security event:', error);
-      await this.logFailedEvent('security', eventType, error.message);
+      await this.logFailedEvent('security', eventType, error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -268,7 +268,7 @@ class AuditLogService {
 
     } catch (error) {
       console.error('Failed to log user activity:', error);
-      await this.logFailedEvent('user_activity', eventType, error.message);
+      await this.logFailedEvent('user_activity', eventType, error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -310,7 +310,7 @@ class AuditLogService {
 
     } catch (error) {
       console.error('Failed to log system event:', error);
-      await this.logFailedEvent('system', eventType, error.message);
+      await this.logFailedEvent('system', eventType, error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -369,7 +369,7 @@ class AuditLogService {
       };
 
     } catch (error) {
-      throw new Error(`Failed to query logs: ${error.message}`);
+      throw new Error(`Failed to query logs: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -437,7 +437,7 @@ class AuditLogService {
       };
 
     } catch (error) {
-      throw new Error(`Failed to generate log summary: ${error.message}`);
+      throw new Error(`Failed to generate log summary: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -497,14 +497,15 @@ class AuditLogService {
       const encryptedLog = await EncryptionService.encryptData(JSON.stringify(logEntry));
       
       // Store encrypted log
-      const storageKey = `${AUDIT_STORAGE_KEYS[logEntry.type.toUpperCase() + '_LOGS']}_${logEntry.id}`;
+      const keyName = `${logEntry.type.toUpperCase()}_LOGS` as keyof typeof AUDIT_STORAGE_KEYS;
+      const storageKey = `${AUDIT_STORAGE_KEYS[keyName] || AUDIT_STORAGE_KEYS.SYSTEM_LOGS}_${logEntry.id}`;
       await AsyncStorage.setItem(storageKey, JSON.stringify(encryptedLog));
 
       // Update log metadata
       await this.updateLogMetadata(logEntry);
 
     } catch (error) {
-      throw new Error(`Failed to persist log entry: ${error.message}`);
+      throw new Error(`Failed to persist log entry: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

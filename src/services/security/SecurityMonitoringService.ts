@@ -408,7 +408,7 @@ class SecurityMonitoringService {
       );
 
     } catch (error) {
-      throw new Error(`Failed to add monitoring rule: ${error.message}`);
+      throw new Error(`Failed to add monitoring rule: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -433,7 +433,7 @@ class SecurityMonitoringService {
       }
 
     } catch (error) {
-      throw new Error(`Failed to remove monitoring rule: ${error.message}`);
+      throw new Error(`Failed to remove monitoring rule: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -477,7 +477,7 @@ class SecurityMonitoringService {
       }
 
     } catch (error) {
-      throw new Error(`Failed to resolve threat: ${error.message}`);
+      throw new Error(`Failed to resolve threat: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -528,7 +528,7 @@ class SecurityMonitoringService {
       };
 
     } catch (error) {
-      throw new Error(`Failed to calculate security metrics: ${error.message}`);
+      throw new Error(`Failed to calculate security metrics: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

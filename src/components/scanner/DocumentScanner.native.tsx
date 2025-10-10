@@ -11,10 +11,10 @@ interface DocumentScannerNativeProps {
   onError: (error: string) => void;
 }
 
-const DocumentScannerNative: React.FC<DocumentScannerNativeProps> = ({ 
+const DocumentScannerNative = ({ 
   onDocumentScanned, 
   onError 
-}) => {
+}: DocumentScannerNativeProps) => {
 
   const handleCameraScan = () => {
     // Placeholder for camera integration

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 
-export const LoadingScreen: React.FC = () => {
+export const LoadingScreen = () => {
   return (
     <View style={styles.container}>
       <ActivityIndicator size="large" color="#1976D2" />

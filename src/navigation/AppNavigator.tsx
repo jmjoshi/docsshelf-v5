@@ -9,6 +9,7 @@ import { DocumentsScreen } from '../screens/Documents/DocumentsScreen.simple';
 import { DocumentDashboard } from '../screens/Documents/DocumentDashboard';
 import { DocumentReviewHub } from '../screens/Documents/DocumentReviewHub';
 import { DocumentStorageScreen } from '../screens/Documents/DocumentStorageScreen';
+import { DocumentViewerScreen } from '../screens/Documents/DocumentViewerScreen';
 import { SettingsScreen } from '../screens/Settings/SettingsScreen';
 import CategoryManagementScreen from '../screens/Documents/CategoryManagementScreen.simple';
 import DocumentUploadScreen from '../screens/Documents/DocumentUploadScreen';
@@ -93,6 +94,7 @@ export const AppNavigator = () => {
       <Stack.Screen name="DocumentScanner" component={DocumentScannerScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DocumentReviewHub" component={DocumentReviewHub} options={{ headerShown: false }} />
       <Stack.Screen name="DocumentStorage" component={DocumentStorageScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DocumentViewer" component={DocumentViewerScreen} options={{ headerShown: false }} />
       <Stack.Screen name="OCRResults" component={OCRResultsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Main" component={MainTabs} />
     </Stack.Navigator>
