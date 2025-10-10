@@ -45,7 +45,68 @@ interface DocumentState {
 }
 
 const initialState: DocumentState = {
-  categories: [],
+  categories: [
+    {
+      id: '1',
+      name: 'Business',
+      parentId: null,
+      icon: 'briefcase',
+      color: '#2196F3',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userId: 'default'
+    },
+    {
+      id: '2',
+      name: 'Invoices',
+      parentId: null,
+      icon: 'receipt',
+      color: '#4CAF50',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userId: 'default'
+    },
+    {
+      id: '3',
+      name: 'Receipts',
+      parentId: null,
+      icon: 'shopping-cart',
+      color: '#FF9800',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userId: 'default'
+    },
+    {
+      id: '4',
+      name: 'Contracts',
+      parentId: null,
+      icon: 'document-text',
+      color: '#9C27B0',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userId: 'default'
+    },
+    {
+      id: '5',
+      name: 'Financial Statements',
+      parentId: null,
+      icon: 'trending-up',
+      color: '#607D8B',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userId: 'default'
+    },
+    {
+      id: '6',
+      name: 'Personal',
+      parentId: null,
+      icon: 'person',
+      color: '#E91E63',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userId: 'default'
+    }
+  ],
   documents: [],
   selectedCategory: null,
   loading: false,
@@ -83,10 +144,14 @@ const documentSlice = createSlice({
     addDocument: (state, action: PayloadAction<Document>) => {
       state.documents.push(action.payload);
     },
-    updateDocument: (state, action: PayloadAction<Document>) => {
+    updateDocument: (state, action: PayloadAction<{ id: string; updates: Partial<Document> }>) => {
       const index = state.documents.findIndex(doc => doc.id === action.payload.id);
       if (index !== -1) {
-        state.documents[index] = action.payload;
+        state.documents[index] = {
+          ...state.documents[index],
+          ...action.payload.updates,
+          updatedAt: new Date().toISOString(),
+        };
       }
     },
     removeDocument: (state, action: PayloadAction<string>) => {

@@ -18,11 +18,119 @@ import {
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import DocumentUploadService, { UploadProgress } from '../../services/documents/DocumentUploadService';
-import { addDocument } from '../../store/slices/documentSlice';
+import { documentOCRService } from '../../services/documents/DocumentOCRService';
+import { documentClassificationService } from '../../services/documents/DocumentClassificationService';
+import { addDocument, updateDocument } from '../../store/slices/documentSlice';
 import DatabaseService from '../../services/database/DatabaseService';
 
 interface UploadItem extends UploadProgress {
   documentId?: string;
+}
+
+/**
+ * Enhanced OCR and Classification processing
+ */
+async function processDocumentWithOCRAndClassification(
+  documentId: string, 
+  fileUri: string, 
+  mimeType: string
+): Promise<void> {
+  try {
+    console.log(`🤖 Starting enhanced processing for document ${documentId}...`);
+    
+    // Step 1: Perform OCR
+    let ocrResult;
+    if (mimeType.startsWith('image/')) {
+      ocrResult = await documentOCRService.extractTextFromImage(fileUri);
+    } else if (mimeType === 'application/pdf') {
+      const results = await documentOCRService.extractTextFromPDF(fileUri);
+      ocrResult = results[0]; // Use first page for now
+    } else {
+      console.log('⚠️ Unsupported file type for OCR:', mimeType);
+      return;
+    }
+
+    console.log(`✅ OCR completed. Confidence: ${ocrResult.confidence}%`);
+    
+    // Step 2: Intelligent Classification and Analysis
+    const classificationResult = await documentClassificationService.classifyDocument(ocrResult);
+    
+    console.log(`🧠 Classification completed: ${classificationResult.documentType} (${Math.round(classificationResult.confidence * 100)}%)`);
+    console.log(`📁 Suggested category: ${classificationResult.suggestedCategory}`);
+    console.log(`🔍 Key insights: ${classificationResult.keyInsights.length} insights generated`);
+    
+    // Step 3: Update document with comprehensive results
+    const enhancedUpdateData = {
+      // OCR Results
+      ocrText: ocrResult.text,
+      ocrConfidence: ocrResult.confidence,
+      ocrWords: ocrResult.words,
+      
+      // Classification Results
+      documentType: classificationResult.documentType,
+      typeConfidence: classificationResult.confidence,
+      suggestedCategory: classificationResult.suggestedCategory,
+      categoryConfidence: classificationResult.categoryConfidence,
+      
+      // Enhanced Metadata
+      extractedData: {
+        ...ocrResult.extractedData,
+        ...classificationResult.extractedMetadata
+      },
+      
+      // AI Insights
+      keyInsights: classificationResult.keyInsights,
+      processingMetrics: {
+        ocrProcessingTime: Date.now(), // Would track actual time
+        classificationTime: classificationResult.processingTime,
+        totalProcessingTime: classificationResult.processingTime,
+      },
+      
+      // Processing Status
+      enhancedProcessing: true,
+      processedAt: new Date().toISOString(),
+      
+      // Quick Access Fields
+      hasAmounts: classificationResult.extractedMetadata.amounts?.length > 0,
+      hasDates: classificationResult.extractedMetadata.dates?.length > 0,
+      hasEntities: classificationResult.extractedMetadata.entities?.length > 0,
+      requiresAttention: classificationResult.keyInsights.some(insight => insight.actionable),
+      confidenceScore: Math.round((ocrResult.confidence + classificationResult.confidence * 100) / 2)
+    };
+
+    // Dispatch update to Redux store
+    const { store } = await import('../../store');
+    store.dispatch(updateDocument({ id: documentId, updates: enhancedUpdateData }));
+
+    console.log(`🎉 Enhanced processing completed for document ${documentId}`);
+    console.log(`📊 Confidence Score: ${enhancedUpdateData.confidenceScore}%`);
+    console.log(`🎯 Document Type: ${classificationResult.documentType}`);
+    console.log(`📁 Suggested Category: ${classificationResult.suggestedCategory} (${Math.round(classificationResult.categoryConfidence * 100)}%)`);
+    
+    // Log key insights for debugging
+    if (classificationResult.keyInsights.length > 0) {
+      console.log('💡 Key Insights:');
+      classificationResult.keyInsights.forEach((insight, index) => {
+        console.log(`  ${index + 1}. ${insight.title}: ${insight.description} (${Math.round(insight.confidence * 100)}%)`);
+      });
+    }
+    
+  } catch (error) {
+    console.error(`❌ Enhanced processing failed for document ${documentId}:`, error);
+    
+    // Update document with error status but don't fail completely
+    const { store } = await import('../../store');
+    store.dispatch(updateDocument({ 
+      id: documentId, 
+      updates: { 
+        processingError: error.message,
+        processedAt: new Date().toISOString(),
+        enhancedProcessing: false
+      } 
+    }));
+    
+    throw error; // Re-throw for caller handling
+  }
 }
 
 export default function DocumentUploadScreen({ route, navigation }: any) {
@@ -123,6 +231,19 @@ export default function DocumentUploadScreen({ route, navigation }: any) {
 
             // Add the document directly to Redux (no need to fetch from DB again)
             dispatch(addDocument(result.document));
+
+            // Start OCR processing in background for supported file types
+            if (result.document.mimeType.startsWith('image/') || result.document.mimeType === 'application/pdf') {
+              console.log(`🔍 Starting enhanced OCR and classification processing for ${result.document.name}...`);
+              processDocumentWithOCRAndClassification(
+                result.document.id,
+                result.document.filePath,
+                result.document.mimeType
+              ).catch(error => {
+                console.error('OCR and classification processing failed:', error);
+                // OCR failure doesn't affect upload success
+              });
+            }
 
             results.push({ success: true, fileName: file.name });
           } else {

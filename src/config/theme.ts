@@ -226,3 +226,27 @@ export const shadows = {
     elevation: 8,
   },
 };
+
+// Default theme export
+export const theme = {
+  colors: {
+    ...lightTheme.colors,
+    // Add any missing colors that components expect
+    border: '#E0E0E0',
+    text: brandColors.text,
+    textSecondary: brandColors.textSecondary,
+    primary: brandColors.primary,
+    success: brandColors.success,
+    warning: brandColors.warning,
+    error: brandColors.error,
+    info: brandColors.info,
+    background: brandColors.background,
+  },
+  typography,
+  spacing,
+  borderRadius,
+  shadows,
+};
+
+// Export default theme for convenience
+export default theme;

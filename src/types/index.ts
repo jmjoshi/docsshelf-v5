@@ -485,6 +485,9 @@ export type RootStackParamList = {
   CategoryManagement: undefined;
   DocumentUpload: { categoryId?: string; scannedDocuments?: any[] };
   DocumentScanner: { categoryId?: string; folderId?: string };
+  DocumentReviewHub: { documents?: any[] };
+  DocumentStorage: undefined;
+  OCRResults: { documentId: string; imageUri: string; ocrResult: any };
   Main: undefined;
   DocumentViewer: { documentId: string };
   Scanner: { categoryId?: string; folderId?: string };

@@ -1,14 +1,19 @@
 import * as React from 'react';
+import { Text } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 // Screens
 import HomeScreen from '../screens/HomeScreen';
 import { DocumentsScreen } from '../screens/Documents/DocumentsScreen.simple';
+import { DocumentDashboard } from '../screens/Documents/DocumentDashboard';
+import { DocumentReviewHub } from '../screens/Documents/DocumentReviewHub';
+import { DocumentStorageScreen } from '../screens/Documents/DocumentStorageScreen';
 import { SettingsScreen } from '../screens/Settings/SettingsScreen';
 import CategoryManagementScreen from '../screens/Documents/CategoryManagementScreen.simple';
 import DocumentUploadScreen from '../screens/Documents/DocumentUploadScreen';
 import DocumentScannerScreen from '../screens/Documents/DocumentScannerScreen';
+import OCRResultsScreen from '../screens/Documents/OCRResultsScreen';
 import { LoginScreen } from '../screens/Auth/LoginScreen';
 import { RegisterScreen } from '../screens/Auth/RegisterScreen';
 import TOTPSetupScreen from '../screens/Auth/TOTPSetupScreen';
@@ -25,13 +30,46 @@ const MainTabs = () => {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#1976D2',
-        tabBarInactiveTintColor: '#757575',
+        tabBarActiveTintColor: '#007AFF',
+        tabBarInactiveTintColor: '#6c757d',
+        tabBarStyle: {
+          backgroundColor: '#fff',
+          borderTopWidth: 1,
+          borderTopColor: '#e1e5e9',
+          paddingBottom: 5,
+          paddingTop: 5,
+          height: 60,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '500',
+        },
       }}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Documents" component={DocumentsScreen} />
-      <Tab.Screen name="Settings" component={SettingsScreen} />
+      <Tab.Screen 
+        name="Dashboard" 
+        component={DocumentDashboard} 
+        options={{
+          tabBarLabel: 'Dashboard',
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>📱</Text>,
+        }}
+      />
+      <Tab.Screen 
+        name="Documents" 
+        component={DocumentsScreen}
+        options={{
+          tabBarLabel: 'Documents',
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>📄</Text>,
+        }}
+      />
+      <Tab.Screen 
+        name="Settings" 
+        component={SettingsScreen}
+        options={{
+          tabBarLabel: 'Settings', 
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>⚙️</Text>,
+        }}
+      />
     </Tab.Navigator>
   );
 };
@@ -53,6 +91,9 @@ export const AppNavigator = () => {
       <Stack.Screen name="CategoryManagement" component={CategoryManagementScreen} options={{ title: 'Manage Categories' }} />
       <Stack.Screen name="DocumentUpload" component={DocumentUploadScreen} options={{ title: 'Upload Document' }} />
       <Stack.Screen name="DocumentScanner" component={DocumentScannerScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DocumentReviewHub" component={DocumentReviewHub} options={{ headerShown: false }} />
+      <Stack.Screen name="DocumentStorage" component={DocumentStorageScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="OCRResults" component={OCRResultsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Main" component={MainTabs} />
     </Stack.Navigator>
   );

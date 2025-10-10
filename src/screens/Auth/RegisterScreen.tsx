@@ -76,8 +76,118 @@ export const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }: Registe
   const confirmPasswordRef = useRef<TextInput>(null);
 
   const updateField = (field: string, value: string) => {
-    setFormData({ ...formData, [field]: value });
-    setErrors({ ...errors, [field]: undefined });
+    const newFormData = { ...formData, [field]: value };
+    setFormData(newFormData);
+    
+    // Clear error when user starts typing
+    if (errors[field]) {
+      setErrors({ ...errors, [field]: undefined });
+    }
+    
+    // If password is changed and confirm password exists, re-validate confirm password
+    if (field === 'password' && formData.confirmPassword) {
+      setTimeout(() => validateField('confirmPassword', formData.confirmPassword), 0);
+    }
+  };
+
+  const isFieldValid = (field: string, value: string) => {
+    switch (field) {
+      case 'firstName':
+      case 'lastName':
+        return value.trim().length > 0;
+      case 'email':
+        return value.trim().length > 0 && validateEmail(value);
+      case 'password':
+        return validatePassword(value).valid;
+      case 'confirmPassword':
+        return value.length > 0 && formData.password === value;
+      case 'phoneNumber':
+        // Optional field - valid if empty or matches pattern
+        return !value.trim() || /^\+?[\d\s\-\(\)]{7,20}$/.test(value);
+      default:
+        return false;
+    }
+  };
+
+  const getInputStyle = (field: string, value: string) => {
+    if (errors[field]) {
+      return [styles.input, styles.inputError];
+    } else if (value && isFieldValid(field, value)) {
+      return [styles.input, styles.inputValid];
+    }
+    return styles.input;
+  };
+
+  const validateField = (field: string, value: string) => {
+    const newErrors = { ...errors };
+
+    switch (field) {
+      case 'firstName':
+        if (!value.trim()) {
+          newErrors.firstName = 'First name is required';
+        } else {
+          delete newErrors.firstName;
+        }
+        break;
+
+      case 'lastName':
+        if (!value.trim()) {
+          newErrors.lastName = 'Last name is required';
+        } else {
+          delete newErrors.lastName;
+        }
+        break;
+
+      case 'email':
+        if (!value.trim()) {
+          newErrors.email = 'Email is required';
+        } else if (!validateEmail(value)) {
+          newErrors.email = 'Invalid email format';
+        } else {
+          delete newErrors.email;
+        }
+        break;
+
+      case 'password':
+        if (!value) {
+          newErrors.password = 'Password is required';
+        } else {
+          const passwordValidation = validatePassword(value);
+          if (!passwordValidation.valid) {
+            newErrors.password = passwordValidation.message || 'Invalid password';
+          } else {
+            delete newErrors.password;
+          }
+        }
+        break;
+
+      case 'confirmPassword':
+        if (!value) {
+          newErrors.confirmPassword = 'Please confirm your password';
+        } else if (formData.password !== value) {
+          newErrors.confirmPassword = 'Passwords do not match';
+        } else {
+          delete newErrors.confirmPassword;
+        }
+        break;
+
+      case 'phoneNumber':
+        // Phone number is optional, so only validate if provided
+        if (value.trim()) {
+          // More comprehensive phone number validation
+          const phoneRegex = /^\+?[\d\s\-\(\)]{7,20}$/;
+          if (!phoneRegex.test(value)) {
+            newErrors.phoneNumber = 'Invalid phone number format (e.g., +1234567890)';
+          } else {
+            delete newErrors.phoneNumber;
+          }
+        } else {
+          delete newErrors.phoneNumber;
+        }
+        break;
+    }
+
+    setErrors(newErrors);
   };
 
   const handleRegister = async () => {
@@ -183,10 +293,11 @@ export const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }: Registe
           <View style={styles.inputContainer}>
             <Text style={styles.label}>First Name *</Text>
             <TextInput
-              style={[styles.input, errors.firstName && styles.inputError]}
+              style={getInputStyle('firstName', formData.firstName)}
               placeholder="John"
               value={formData.firstName}
               onChangeText={(text) => updateField('firstName', text)}
+              onBlur={() => validateField('firstName', formData.firstName)}
               autoCapitalize="words"
               textContentType="givenName"
               editable={!loading}
@@ -201,10 +312,11 @@ export const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }: Registe
             <Text style={styles.label}>Last Name *</Text>
             <TextInput
               ref={lastNameRef}
-              style={[styles.input, errors.lastName && styles.inputError]}
+              style={getInputStyle('lastName', formData.lastName)}
               placeholder="Doe"
               value={formData.lastName}
               onChangeText={(text) => updateField('lastName', text)}
+              onBlur={() => validateField('lastName', formData.lastName)}
               autoCapitalize="words"
               textContentType="familyName"
               editable={!loading}
@@ -219,10 +331,11 @@ export const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }: Registe
             <Text style={styles.label}>Email Address *</Text>
             <TextInput
               ref={emailRef}
-              style={[styles.input, errors.email && styles.inputError]}
+              style={getInputStyle('email', formData.email)}
               placeholder="email@example.com"
               value={formData.email}
               onChangeText={(text) => updateField('email', text)}
+              onBlur={() => validateField('email', formData.email)}
               autoCapitalize="none"
               autoComplete="email"
               textContentType="emailAddress"
@@ -239,10 +352,11 @@ export const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }: Registe
             <Text style={styles.label}>Phone Number (Optional)</Text>
             <TextInput
               ref={phoneRef}
-              style={[styles.input, errors.phoneNumber && styles.inputError]}
+              style={getInputStyle('phoneNumber', formData.phoneNumber)}
               placeholder="+1234567890"
               value={formData.phoneNumber}
               onChangeText={(text) => updateField('phoneNumber', text)}
+              onBlur={() => validateField('phoneNumber', formData.phoneNumber)}
               textContentType="telephoneNumber"
               keyboardType="phone-pad"
               editable={!loading}
@@ -257,10 +371,11 @@ export const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }: Registe
             <Text style={styles.label}>Password *</Text>
             <TextInput
               ref={passwordRef}
-              style={[styles.input, errors.password && styles.inputError]}
+              style={getInputStyle('password', formData.password)}
               placeholder="Create a strong password"
               value={formData.password}
               onChangeText={(text) => updateField('password', text)}
+              onBlur={() => validateField('password', formData.password)}
               secureTextEntry
               autoCapitalize="none"
               textContentType="newPassword"
@@ -279,10 +394,11 @@ export const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }: Registe
             <Text style={styles.label}>Confirm Password *</Text>
             <TextInput
               ref={confirmPasswordRef}
-              style={[styles.input, errors.confirmPassword && styles.inputError]}
+              style={getInputStyle('confirmPassword', formData.confirmPassword)}
               placeholder="Re-enter your password"
               value={formData.confirmPassword}
               onChangeText={(text) => updateField('confirmPassword', text)}
+              onBlur={() => validateField('confirmPassword', formData.confirmPassword)}
               secureTextEntry
               autoCapitalize="none"
               textContentType="newPassword"
@@ -373,6 +489,11 @@ const styles = StyleSheet.create({
   },
   inputError: {
     borderColor: '#F44336',
+    backgroundColor: '#FFEBEE',
+  },
+  inputValid: {
+    borderColor: '#4CAF50',
+    backgroundColor: '#F1F8E9',
   },
   errorText: {
     color: '#F44336',

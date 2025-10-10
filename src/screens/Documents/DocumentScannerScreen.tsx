@@ -13,14 +13,17 @@ import {
   Alert,
   Dimensions,
   ActivityIndicator,
-  SafeAreaView,
   StatusBar,
+  Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Polygon } from 'react-native-svg';
+import { documentOCRService, OCRResult } from '../../services/documents/DocumentOCRService';
+import { DocumentStorageService } from '../../services/storage/DocumentStorageService';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -40,6 +43,8 @@ interface ScannedDocument {
   originalUri: string;
   timestamp: number;
   processed: boolean;
+  ocrResult?: OCRResult;
+  ocrProcessing?: boolean;
 }
 
 export default function DocumentScannerScreen() {
@@ -55,6 +60,14 @@ export default function DocumentScannerScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [scannedDocuments, setScannedDocuments] = useState<ScannedDocument[]>([]);
+  
+  // Debug state changes
+  useEffect(() => {
+    console.log('🔄 ScannedDocuments state changed:', scannedDocuments.length, 'documents');
+    scannedDocuments.forEach((doc, index) => {
+      console.log(`  ${index + 1}. ${doc.id} - OCR: ${doc.ocrResult ? 'Complete' : (doc.ocrProcessing ? 'Processing' : 'Pending')}`);
+    });
+  }, [scannedDocuments]);
   const [detectedDocument, setDetectedDocument] = useState<DetectedDocument | null>(null);
   const [flashMode, setFlashMode] = useState<'off' | 'on'>('off');
   const [autoCapture, setAutoCapture] = useState(false);
@@ -95,6 +108,7 @@ export default function DocumentScannerScreen() {
         
         // Auto-capture if enabled and confidence is high
         if (autoCapture && detected.confidence > 0.8) {
+          console.log('🚀 Auto-capture triggered with confidence:', detected.confidence);
           handleCapture();
         }
       }
@@ -103,10 +117,22 @@ export default function DocumentScannerScreen() {
     return () => clearInterval(interval);
   }, [isCapturing, isProcessing, autoCapture, permission, mediaPermission]);
 
+  // Debug: Track scannedDocuments changes
+  useEffect(() => {
+    console.log('🔄 ScannedDocuments state changed:', scannedDocuments.length, 'documents');
+    scannedDocuments.forEach((doc, index) => {
+      console.log(`  Document ${index + 1}: ${doc.id} (processing: ${doc.ocrProcessing})`);
+    });
+  }, [scannedDocuments]);
+
   const handleCapture = async () => {
-    if (!cameraRef.current || isCapturing || isProcessing) return;
+    if (!cameraRef.current || isCapturing || isProcessing) {
+      console.log('❌ Capture blocked - camera ref:', !!cameraRef.current, 'capturing:', isCapturing, 'processing:', isProcessing);
+      return;
+    }
 
     try {
+      console.log('📸 Starting capture...');
       setIsCapturing(true);
       
       const photo = await cameraRef.current.takePictureAsync({
@@ -115,8 +141,11 @@ export default function DocumentScannerScreen() {
         skipProcessing: false,
       });
 
+      console.log('📸 Photo taken:', !!photo?.uri);
       if (photo?.uri) {
         await processScannedImage(photo.uri);
+      } else {
+        console.log('❌ No photo URI received');
       }
     } catch (error) {
       console.error('Error capturing photo:', error);
@@ -128,6 +157,7 @@ export default function DocumentScannerScreen() {
 
   const processScannedImage = async (imageUri: string) => {
     try {
+      console.log('🔄 Processing scanned image:', imageUri);
       setIsProcessing(true);
 
       // For demo purposes, we'll just resize and enhance the image
@@ -144,25 +174,46 @@ export default function DocumentScannerScreen() {
         }
       );
 
+      const documentId = `scan_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Store document permanently on device
+      const storedDocument = await DocumentStorageService.storeDocument(processedImage.uri, documentId);
+      
       const scannedDoc: ScannedDocument = {
-        id: `scan_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        uri: processedImage.uri,
+        id: documentId,
+        uri: storedDocument.uri, // Use permanent storage URI
         originalUri: imageUri,
         timestamp: Date.now(),
         processed: true,
+        ocrProcessing: true,
       };
 
-      setScannedDocuments(prev => [...prev, scannedDoc]);
+      console.log('📄 Created and stored scanned document:', {
+        id: scannedDoc.id,
+        location: storedDocument.uri,
+        size: Math.round(storedDocument.size / 1024) + 'KB'
+      });
       
-      // Show success feedback
+      setScannedDocuments(prev => {
+        const newDocs = [...prev, scannedDoc];
+        console.log('📋 Updated scanned documents count:', newDocs.length);
+        console.log('📋 Previous docs:', prev.length, 'New docs array:', newDocs);
+        console.log('📋 New document ID:', scannedDoc.id);
+        return newDocs;
+      });
+      
+      // Start OCR processing in background
+      processOCR(scannedDoc.id, processedImage.uri);
+      
+      // Show success feedback with storage info
       Alert.alert(
-        'Document Scanned',
-        'Document successfully scanned and processed!',
+        'Document Scanned & Stored! 📄',
+        `Document saved to device storage:\n• App Documents: ${storedDocument.filename}\n• Size: ${Math.round(storedDocument.size / 1024)}KB\n${Platform.OS === 'android' ? '• Gallery: DocShelf album (if permission granted)' : ''}\n\nOCR processing is running in the background.`,
         [
           { text: 'Scan Another', style: 'default' },
           { 
-            text: 'Review Scans', 
-            onPress: () => showScanReview(),
+            text: 'Review All Scans', 
+            onPress: () => navigation.navigate('DocumentReviewHub' as never),
             style: 'default'
           },
         ]
@@ -176,25 +227,117 @@ export default function DocumentScannerScreen() {
     }
   };
 
-  const showScanReview = () => {
-    // Navigate to scan review screen (would be implemented)
-    Alert.alert(
-      'Scan Review',
-      `You have ${scannedDocuments.length} scanned document(s). Would you like to upload them now?`,
-      [
-        { text: 'Continue Scanning', style: 'cancel' },
-        { 
-          text: 'Upload Now', 
-          onPress: () => navigateToUpload(),
-          style: 'default'
-        },
-      ]
-    );
+  const processOCR = async (documentId: string, imageUri: string) => {
+    try {
+      console.log('🔍 Starting OCR processing for scanned document...');
+      
+      // Perform OCR on the scanned image
+      const ocrResult = await documentOCRService.extractTextFromImage(imageUri);
+      
+      // Update the scanned document with OCR results
+      setScannedDocuments(prev => 
+        prev.map(doc => 
+          doc.id === documentId 
+            ? { ...doc, ocrResult, ocrProcessing: false }
+            : doc
+        )
+      );
+      
+      console.log('✅ OCR processing completed for scanned document');
+      console.log(`Extracted text preview: "${ocrResult.text.substring(0, 100)}..."`);
+      
+    } catch (error) {
+      console.error('❌ OCR processing failed:', error);
+      
+      // Update document with error status but keep it in the array
+      setScannedDocuments(prev => 
+        prev.map(doc => 
+          doc.id === documentId 
+            ? { 
+                ...doc, 
+                ocrProcessing: false,
+                ocrResult: {
+                  text: 'OCR processing failed. Document captured but text extraction unsuccessful.',
+                  confidence: 0.0,
+                  words: [],
+                  documentType: 'other' as DocumentType,
+                  extractedData: {}
+                }
+              }
+            : doc
+        )
+      );
+      
+      Alert.alert(
+        'OCR Processing Failed',
+        'Document was captured but text extraction failed. You can still upload the document image.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
-  const navigateToUpload = () => {
+  const showScanReview = () => {
+    // Use setState callback to get the current state value
+    setScannedDocuments(currentDocs => {
+      console.log('🔍 Showing scan review - scanned documents:', currentDocs);
+      console.log('📊 Scanned documents count:', currentDocs.length);
+      
+      const ocrCount = currentDocs.filter(doc => doc.ocrResult).length;
+      const processingCount = currentDocs.filter(doc => doc.ocrProcessing).length;
+      
+      console.log('📊 OCR count:', ocrCount, 'Processing count:', processingCount);
+      
+      let message = `You have ${currentDocs.length} scanned document(s).`;
+      if (ocrCount > 0) {
+        message += ` ${ocrCount} have been processed with OCR.`;
+      }
+      if (processingCount > 0) {
+        message += ` ${processingCount} are still being processed.`;
+      }
+      message += ' Would you like to upload them now?';
+      
+      // Show the alert with current state
+      Alert.alert(
+        'Scan Review',
+        message,
+        [
+          { text: 'Continue Scanning', style: 'cancel' },
+          { 
+            text: 'View OCR Results', 
+            onPress: () => navigateToOCRResults(currentDocs),
+            style: 'default'
+          },
+          { 
+            text: 'Upload Now', 
+            onPress: () => navigateToUpload(currentDocs),
+            style: 'default'
+          },
+        ]
+      );
+      
+      // Return the same array (no state change)
+      return currentDocs;
+    });
+  };
+
+  const navigateToOCRResults = (currentDocs = scannedDocuments) => {
+    const processedDocuments = currentDocs.filter(doc => doc.ocrResult);
+    if (processedDocuments.length === 0) {
+      Alert.alert('No OCR Results', 'No documents have been processed with OCR yet.');
+      return;
+    }
+    
+    // Navigate to OCR results screen with the first processed document
+    navigation.navigate('OCRResults' as never, { 
+      ocrResult: processedDocuments[0].ocrResult,
+      documentUri: processedDocuments[0].uri,
+      documentId: processedDocuments[0].id,
+    } as never);
+  };
+
+  const navigateToUpload = (currentDocs = scannedDocuments) => {
     // Convert scanned documents to upload format and navigate
-    const documentsForUpload = scannedDocuments.map(doc => ({
+    const documentsForUpload = currentDocs.map(doc => ({
       uri: doc.uri,
       name: `scanned_document_${new Date(doc.timestamp).toISOString().slice(0, 19).replace(/:/g, '-')}.jpg`,
       type: 'image/jpeg',
@@ -266,15 +409,52 @@ export default function DocumentScannerScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor="#000000" />
       
       <View style={styles.header}>
         <TouchableOpacity 
-          style={styles.headerButton} 
+          style={styles.headerButton}
           onPress={() => navigation.goBack()}
         >
           <Text style={styles.headerButtonText}>✕</Text>
+        </TouchableOpacity>
+
+        {/* Storage Info Button */}
+        <TouchableOpacity 
+          style={[styles.headerButton, { backgroundColor: '#4CAF50', right: 60 }]}
+          onPress={() => navigation.navigate('DocumentStorage' as never)}
+        >
+          <Text style={styles.headerButtonText}>📂</Text>
+        </TouchableOpacity>
+        
+        {/* Debug Test Button - Remove in production */}
+        <TouchableOpacity 
+          style={[styles.headerButton, { backgroundColor: '#FF6B6B', right: 120 }]}
+          onPress={() => {
+            console.log('🧪 Adding test document');
+            const testDoc: ScannedDocument = {
+              id: `test_${Date.now()}`,
+              uri: 'test://uri',
+              originalUri: 'test://original',
+              timestamp: Date.now(),
+              processed: true,
+              ocrProcessing: false,
+              ocrResult: {
+                text: 'Test document text',
+                confidence: 0.95,
+                engine: 'test',
+                timestamp: Date.now(),
+              }
+            };
+            setScannedDocuments(prev => {
+              const newDocs = [...prev, testDoc];
+              console.log('🧪 Test docs added, new count:', newDocs.length);
+              return newDocs;
+            });
+          }}
+        >
+          <Text style={[styles.headerButtonText, { fontSize: 12 }]}>TEST</Text>
         </TouchableOpacity>
         
         <Text style={styles.headerTitle}>Scan Document</Text>
@@ -295,31 +475,32 @@ export default function DocumentScannerScreen() {
           style={styles.camera}
           facing={facing}
           flash={flashMode}
-        >
-          {renderDocumentOverlay()}
-          
-          {/* Detection Status */}
-          <View style={styles.detectionStatus}>
-            <View style={[
-              styles.detectionIndicator,
-              { backgroundColor: detectedDocument?.confidence > 0.8 ? '#4CAF50' : '#FF9800' }
-            ]} />
-            <Text style={styles.detectionText}>
-              {detectedDocument?.confidence > 0.8 
-                ? 'Document detected - Ready to scan'
-                : 'Position document in frame'
-              }
-            </Text>
-          </View>
+        />
+        
+        {/* Overlay elements positioned absolutely over camera */}
+        {renderDocumentOverlay()}
+        
+        {/* Detection Status */}
+        <View style={styles.detectionStatus}>
+          <View style={[
+            styles.detectionIndicator,
+            { backgroundColor: detectedDocument?.confidence > 0.8 ? '#4CAF50' : '#FF9800' }
+          ]} />
+          <Text style={styles.detectionText}>
+            {detectedDocument?.confidence > 0.8 
+              ? 'Document detected - Ready to scan'
+              : 'Position document in frame'
+            }
+          </Text>
+        </View>
 
-          {/* Processing Overlay */}
-          {isProcessing && (
-            <View style={styles.processingOverlay}>
-              <ActivityIndicator size="large" color="#FFFFFF" />
-              <Text style={styles.processingText}>Processing scan...</Text>
-            </View>
-          )}
-        </CameraView>
+        {/* Processing Overlay */}
+        {isProcessing && (
+          <View style={styles.processingOverlay}>
+            <ActivityIndicator size="large" color="#FFFFFF" />
+            <Text style={styles.processingText}>Processing scan...</Text>
+          </View>
+        )}
       </View>
 
       {/* Bottom Controls */}
@@ -354,16 +535,49 @@ export default function DocumentScannerScreen() {
         <TouchableOpacity 
           style={styles.controlButton}
           onPress={() => {
-            if (scannedDocuments.length > 0) {
-              showScanReview();
-            } else {
-              Alert.alert('No Scans', 'No documents have been scanned yet.');
-            }
+            // Use setState callback to get current count
+            setScannedDocuments(currentDocs => {
+              console.log('🔘 Review button pressed - current count:', currentDocs.length);
+              if (currentDocs.length > 0) {
+                navigation.navigate('DocumentReviewHub' as never);
+              } else {
+                Alert.alert('No Scans', 'No documents have been scanned yet.');
+              }
+              return currentDocs; // No state change
+            });
           }}
         >
           <Text style={styles.controlButtonText}>
-            {scannedDocuments.length > 0 ? `${scannedDocuments.length}` : 'REVIEW'}
+            {scannedDocuments.length > 0 
+              ? `${scannedDocuments.length}${scannedDocuments.some(doc => doc.ocrProcessing) ? '⏳' : ''}` 
+              : 'REVIEW'
+            }
           </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.controlButton, { backgroundColor: '#FF6B35' }]}
+          onPress={() => {
+            console.log('🧪 Adding test document...');
+            const testDoc: ScannedDocument = {
+              id: `test_${Date.now()}`,
+              uri: 'test://mock-image.jpg',
+              originalUri: 'test://mock-image.jpg',
+              timestamp: Date.now(),
+              processed: true,
+              ocrProcessing: false,
+              ocrResult: {
+                text: 'Test document text',
+                confidence: 0.95,
+                words: [],
+                documentType: 'other'
+              }
+            };
+            setScannedDocuments(prev => [...prev, testDoc]);
+            console.log('🧪 Test document added');
+          }}
+        >
+          <Text style={styles.controlButtonText}>TEST</Text>
         </TouchableOpacity>
       </View>
 
