@@ -136,8 +136,27 @@ async function processDocumentWithOCRAndClassification(
 export default function DocumentUploadScreen({ route, navigation }: any) {
   const { categoryId, scannedDocuments } = route?.params || {};
   const dispatch = useDispatch();
-  const { user } = useSelector((state: any) => state.auth);
+  const { user, isAuthenticated } = useSelector((state: any) => state.auth);
   const { categories } = useSelector((state: any) => state.document);
+
+  // Debug authentication state
+  React.useEffect(() => {
+    console.log('📤 DocumentUpload: Auth state check');
+    console.log('📤 isAuthenticated:', isAuthenticated);
+    console.log('📤 user:', user ? `${user.firstName} (${user.id})` : 'null');
+    console.log('📤 categories:', categories.length);
+    
+    // If user is not authenticated, redirect to login
+    if (!isAuthenticated || !user?.id) {
+      Alert.alert(
+        'Authentication Required',
+        'Please log in to upload documents',
+        [
+          { text: 'OK', onPress: () => navigation.navigate('Auth') }
+        ]
+      );
+    }
+  }, [isAuthenticated, user, categories]);
 
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -152,12 +171,51 @@ export default function DocumentUploadScreen({ route, navigation }: any) {
 
   useEffect(() => {
     // Load categories if not already loaded
-    if (categories.length === 0 && user) {
-      DatabaseService.getInstance().getCategoryTree(user.id).then((cats) => {
-        dispatch({ type: 'document/setCategories', payload: cats });
-      });
+    if (user?.id) {
+      console.log('📁 DocumentUpload: Loading categories for user:', user.id);
+      console.log('📁 Current categories in state:', categories.length);
+      
+      if (categories.length === 0) {
+        DatabaseService.getInstance().getCategoryTree(user.id).then(async (cats) => {
+          console.log('📁 Loaded categories from DB:', cats.length);
+          
+          // If no categories exist, create some default ones
+          if (cats.length === 0) {
+            console.log('📁 No categories found - creating defaults');
+            try {
+              const defaultCategories = [
+                { name: 'Documents', icon: 'folder', color: '#4A90E2' },
+                { name: 'Receipts', icon: 'receipt', color: '#34C759' },
+                { name: 'Invoices', icon: 'document', color: '#FF9500' },
+                { name: 'Contracts', icon: 'contract', color: '#AF52DE' }
+              ];
+              
+              const createdCategories = [];
+              for (const catData of defaultCategories) {
+                const newCat = await DatabaseService.getInstance().createCategory({
+                  ...catData,
+                  parentId: null,
+                  userId: user.id
+                });
+                createdCategories.push(newCat);
+              }
+              
+              console.log('📁 Created default categories:', createdCategories.length);
+              dispatch({ type: 'document/setCategories', payload: createdCategories });
+            } catch (error) {
+              console.error('❌ Error creating default categories:', error);
+            }
+          } else {
+            dispatch({ type: 'document/setCategories', payload: cats });
+          }
+        }).catch(error => {
+          console.error('❌ Error loading categories:', error);
+        });
+      }
+    } else {
+      console.log('⚠️ DocumentUpload: No user ID available');
     }
-  }, [user]);
+  }, [user?.id, categories.length]);
 
   useEffect(() => {
     // Handle scanned documents from scanner
@@ -175,7 +233,11 @@ export default function DocumentUploadScreen({ route, navigation }: any) {
     }
 
     try {
-      const files = await DocumentUploadService.pickDocuments();
+      // Use comprehensive document source options (Files, Camera, Gallery)
+      const files = await DocumentUploadService.showDocumentSourceOptions({
+        allowMultipleFiles: true,
+        allowMultiplePhotos: true
+      });
 
       if (files.length === 0) {
         return; // User cancelled
@@ -183,17 +245,7 @@ export default function DocumentUploadScreen({ route, navigation }: any) {
 
       console.log('📁 Picked files:', files.map(f => ({ name: f.name, size: f.size, type: f.type, mimeType: f.mimeType })));
 
-      setIsUploading(true);
-
-      // Initialize upload items
-      const initialUploads: UploadItem[] = files.map((file) => ({
-        fileId: `${Date.now()}_${file.name}`,
-        fileName: file.name || 'unknown',
-        totalSize: file.size || 0,
-        uploadedSize: 0,
-        percentage: 0,
-        status: 'pending' as const,
-      }));
+      await handleFiles(files);
 
       setUploads(initialUploads);
 
@@ -299,6 +351,111 @@ export default function DocumentUploadScreen({ route, navigation }: any) {
     } catch (error) {
       console.error('Error picking documents:', error);
       Alert.alert('Error', 'Failed to select documents');
+      setIsUploading(false);
+    }
+  };
+
+  const handleFiles = async (files: any[]) => {
+    try {
+      setIsUploading(true);
+
+      // Initialize upload items
+      const initialUploads: UploadItem[] = files.map((file) => ({
+        fileId: `${Date.now()}_${file.name}`,
+        fileName: file.name || 'unknown',
+        totalSize: file.size || 0,
+        uploadedSize: 0,
+        percentage: 0,
+        status: 'pending' as const,
+      }));
+
+      setUploads(initialUploads);
+
+      // Upload files one by one
+      const results = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        try {
+          const result = await DocumentUploadService.uploadDocument({
+            file: {
+              uri: file.uri,
+              name: file.name,
+              type: file.type || file.mimeType,
+              size: file.size,
+            },
+            categoryId: selectedCategory,
+            userId: user.id,
+            onProgress: (progress) => {
+              setUploads(prev =>
+                prev.map(item =>
+                  item.fileName === progress.fileName ? { ...item, ...progress } : item
+                )
+              );
+            },
+          });
+
+          if (result.success && result.document) {
+            setUploads(prev =>
+              prev.map(item =>
+                item.fileName === file.name ? { ...item, documentId: result.document.id } : item
+              )
+            );
+
+            dispatch(addDocument(result.document));
+            results.push({ success: true, fileName: file.name });
+          } else {
+            results.push({ success: false, fileName: file.name, error: result.error });
+          }
+        } catch (error) {
+          const fileName = file?.name || 'Unknown file';
+          console.error('Error uploading file:', fileName, error);
+          setUploads(prev =>
+            prev.map(item =>
+              item.fileName === fileName
+                ? { ...item, status: 'failed' as const, error: String(error) }
+                : item
+            )
+          );
+          results.push({ success: false, fileName, error: String(error) });
+        }
+      }
+
+      setIsUploading(false);
+
+      // Show results
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.length - successCount;
+
+      if (failCount === 0) {
+        Alert.alert(
+          'Upload Complete',
+          `Successfully uploaded ${successCount} document${successCount === 1 ? '' : 's'}!`,
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
+      } else {
+        const failedFiles = results.filter(r => !r.success);
+        Alert.alert(
+          'Upload Completed with Errors',
+          `Successful: ${successCount}\\nFailed: ${failCount}\\n\\nFailed files:\\n${failedFiles
+            .map(f => `• ${f.fileName}: ${f.error}`)
+            .join('\\n')}`,
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Error handling files:', error);
+      Alert.alert('Upload Error', 'Failed to process files');
       setIsUploading(false);
     }
   };
@@ -531,12 +688,91 @@ export default function DocumentUploadScreen({ route, navigation }: any) {
           </View>
         )}
 
-        {/* Select Files Button */}
+        {/* Document Input Options */}
         {!isUploading && uploads.length === 0 && (
-          <TouchableOpacity style={styles.selectButton} onPress={handlePickDocuments}>
-            <Text style={styles.selectButtonIcon}>📁</Text>
-            <Text style={styles.selectButtonText}>Select Files</Text>
-          </TouchableOpacity>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Add Documents</Text>
+            <Text style={styles.sectionSubtitle}>Choose how you want to add documents:</Text>
+            
+            {/* Primary Action: Comprehensive Options */}
+            <TouchableOpacity style={styles.primaryButton} onPress={handlePickDocuments}>
+              <Text style={styles.primaryButtonIcon}>📂</Text>
+              <View style={styles.primaryButtonContent}>
+                <Text style={styles.primaryButtonText}>Add Documents</Text>
+                <Text style={styles.primaryButtonSubtext}>Files, Camera, or Gallery</Text>
+              </View>
+              <Text style={styles.primaryButtonArrow}>›</Text>
+            </TouchableOpacity>
+            
+            {/* Quick Action Buttons */}
+            <View style={styles.quickActionsContainer}>
+              <TouchableOpacity 
+                style={styles.quickActionButton} 
+                onPress={async () => {
+                  if (!selectedCategory) {
+                    Alert.alert('Select Category', 'Please select a category first');
+                    setShowCategoryPicker(true);
+                    return;
+                  }
+                  try {
+                    const files = await DocumentUploadService.takePhoto();
+                    if (files.length > 0) {
+                      handleFiles(files);
+                    }
+                  } catch (error) {
+                    Alert.alert('Camera Error', 'Failed to take photo');
+                  }
+                }}
+              >
+                <Text style={styles.quickActionIcon}>📸</Text>
+                <Text style={styles.quickActionText}>Camera</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.quickActionButton}
+                onPress={async () => {
+                  if (!selectedCategory) {
+                    Alert.alert('Select Category', 'Please select a category first');
+                    setShowCategoryPicker(true);
+                    return;
+                  }
+                  try {
+                    const files = await DocumentUploadService.selectFromGallery(true);
+                    if (files.length > 0) {
+                      handleFiles(files);
+                    }
+                  } catch (error) {
+                    Alert.alert('Gallery Error', 'Failed to select from gallery');
+                  }
+                }}
+              >
+                <Text style={styles.quickActionIcon}>�️</Text>
+                <Text style={styles.quickActionText}>Gallery</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.quickActionButton}
+                onPress={async () => {
+                  if (!selectedCategory) {
+                    Alert.alert('Select Category', 'Please select a category first');
+                    setShowCategoryPicker(true);
+                    return;
+                  }
+                  try {
+                    const files = await DocumentUploadService.pickDocuments();
+                    if (files.length > 0) {
+                      handleFiles(files);
+                    }
+                  } catch (error) {
+                    Alert.alert('File Error', 'Failed to select files');
+                  }
+                }}
+              >
+                <Text style={styles.quickActionIcon}>📁</Text>
+                <Text style={styles.quickActionText}>Files</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         )}
 
         {/* Uploading Indicator */}
@@ -704,6 +940,78 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  // New Enhanced UI Styles
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#666666',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  primaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2196F3',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    elevation: 3,
+    shadowColor: '#2196F3',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  primaryButtonIcon: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  primaryButtonContent: {
+    flex: 1,
+  },
+  primaryButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  primaryButtonSubtext: {
+    fontSize: 12,
+    color: '#E3F2FD',
+    opacity: 0.9,
+  },
+  primaryButtonArrow: {
+    fontSize: 20,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  quickActionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  quickActionButton: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  quickActionIcon: {
+    fontSize: 20,
+    marginBottom: 6,
+  },
+  quickActionText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#333333',
+    textAlign: 'center',
   },
   uploadItem: {
     flexDirection: 'row',

@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { useSelector } from 'react-redux';
+import DatabaseService from '../../services/database/DatabaseService';
 
 const { useState, useEffect } = React;
 
@@ -33,39 +35,87 @@ interface RecentDocument {
 
 export const DocumentDashboard = () => {
   const navigation = useNavigation();
+  const { user, isAuthenticated } = useSelector((state: any) => state.auth);
   
   const [stats, setStats] = useState<DocumentStats>({
-    scanned: 3,
-    processing: 1,
-    ready: 2,
-    totalSize: 847000, // bytes
+    scanned: 0,
+    processing: 0,
+    ready: 0,
+    totalSize: 0,
   });
   
-  const [recentDocuments, setRecentDocuments] = useState<RecentDocument[]>([
-    {
-      id: '1',
-      name: 'Invoice_001.jpg',
-      status: 'ready',
-      size: 425000,
-      timestamp: Date.now() - 300000,
-      confidence: 87
-    },
-    {
-      id: '2', 
-      name: 'Receipt_002.jpg',
-      status: 'processing',
-      size: 322000,
-      timestamp: Date.now() - 60000
-    },
-    {
-      id: '3',
-      name: 'Contract_003.jpg', 
-      status: 'ready',
-      size: 100000,
-      timestamp: Date.now() - 120000,
-      confidence: 92
+  const [recentDocuments, setRecentDocuments] = useState<RecentDocument[]>([]);
+  
+  // Load real data from database when user is available
+  useEffect(() => {
+    console.log('🏠 DocumentDashboard: Auth check - isAuthenticated:', isAuthenticated, 'user:', user?.id);
+    
+    if (isAuthenticated && user?.id) {
+      console.log('🏠 DocumentDashboard: Loading data for user:', user.id);
+      loadDocumentData();
+    } else {
+      console.log('⚠️ DocumentDashboard: User not authenticated or no user ID - showing empty state');
+      // Show empty state when not authenticated
+      setStats({ scanned: 0, processing: 0, ready: 0, totalSize: 0 });
+      setRecentDocuments([]);
     }
-  ]);
+  }, [isAuthenticated, user?.id]);
+  
+  // Add navigation focus listener to refresh data when returning from upload
+  React.useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (isAuthenticated && user?.id) {
+        console.log('🔄 Dashboard focused - refreshing data');
+        loadDocumentData();
+      }
+    });
+    return unsubscribe;
+  }, [navigation, isAuthenticated, user?.id]);
+  
+  const loadDocumentData = async () => {
+    try {
+      if (!user?.id) {
+        console.log('❌ No user ID available for loading documents');
+        return;
+      }
+
+      console.log('📱 Loading documents from database for user:', user.id);
+      
+      const dbService = DatabaseService.getInstance();
+      
+      // Get document counts
+      const totalDocs = await dbService.getTotalDocumentCount(user.id);
+      console.log('� Total documents found:', totalDocs);
+      
+      // Get recent documents (limit to 5 for dashboard)
+      const allDocuments = await dbService.getDocuments(user.id);
+      const recentDocs = allDocuments
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 5)
+        .map(doc => ({
+          id: doc.id,
+          name: doc.name,
+          status: 'ready' as const,
+          size: doc.fileSize,
+          timestamp: new Date(doc.createdAt).getTime(),
+          confidence: 95 // Default confidence for uploaded docs
+        }));
+      
+      console.log('📄 Recent documents:', recentDocs.length);
+      
+      setRecentDocuments(recentDocs);
+      setStats({
+        scanned: totalDocs, // All uploaded docs are "scanned"
+        processing: 0,     // No processing for now
+        ready: totalDocs,  // All docs are ready
+        totalSize: allDocuments.reduce((sum, doc) => sum + (doc.fileSize || 0), 0)
+      });
+    } catch (error) {
+      console.error('Error loading documents:', error);
+      setRecentDocuments([]);
+      setStats({ scanned: 0, processing: 0, ready: 0, totalSize: 0 });
+    }
+  };
 
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 B';
@@ -140,7 +190,10 @@ export const DocumentDashboard = () => {
         <View style={styles.actionButtonsContainer}>
           <TouchableOpacity 
             style={[styles.actionButton, styles.scanButton]}
-            onPress={() => navigation.navigate('DocumentScanner' as never)}
+            onPress={() => {
+              console.log('📸 Scan button pressed');
+              navigation.navigate('DocumentScanner' as never);
+            }}
           >
             <Text style={styles.actionButtonIcon}>📸</Text>
             <Text style={styles.actionButtonTitle}>SCAN NEW</Text>
@@ -149,13 +202,14 @@ export const DocumentDashboard = () => {
 
           <TouchableOpacity 
             style={[styles.actionButton, styles.uploadButton]}
-            onPress={() => navigation.navigate('DocumentReviewHub' as never)}
-            disabled={stats.ready === 0}
+            onPress={() => {
+              console.log('📤 Upload button pressed');
+              navigation.navigate('DocumentUpload' as never);
+            }}
           >
             <Text style={styles.actionButtonIcon}>📤</Text>
             <Text style={styles.actionButtonTitle}>UPLOAD</Text>
-            <Text style={styles.actionButtonSubtitle}>Ready ({stats.ready})</Text>
-            {stats.ready > 0 && <View style={styles.readyBadge} />}
+            <Text style={styles.actionButtonSubtitle}>Documents</Text>
           </TouchableOpacity>
         </View>
 
@@ -174,7 +228,7 @@ export const DocumentDashboard = () => {
             <TouchableOpacity 
               key={doc.id}
               style={styles.documentCard}
-              onPress={() => navigation.navigate('DocumentDetail' as never, { documentId: doc.id } as never)}
+              onPress={() => console.log('Document card tapped:', doc.name)}
             >
               <View style={styles.documentInfo}>
                 <View style={styles.documentHeader}>
@@ -187,7 +241,13 @@ export const DocumentDashboard = () => {
                   {getStatusText(doc)}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.viewButton}>
+              <TouchableOpacity 
+                style={styles.viewButton}
+                onPress={() => {
+                  console.log('👁️ View button tapped for:', doc.name);
+                  navigation.navigate('DocumentViewer' as never, { documentId: doc.id } as never);
+                }}
+              >
                 <Text style={styles.viewButtonText}>👁️</Text>
               </TouchableOpacity>
             </TouchableOpacity>

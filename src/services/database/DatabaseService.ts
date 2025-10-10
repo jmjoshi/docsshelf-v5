@@ -444,6 +444,22 @@ class DatabaseService {
     };
   }
 
+  async getDocuments(userId: string): Promise<Document[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getAllAsync(
+      `SELECT * FROM documents WHERE userId = ? ORDER BY createdAt DESC`,
+      [userId]
+    );
+
+    return (result as any[]).map(doc => ({
+      ...doc,
+      encrypted: doc.encrypted === 1,
+      tags: typeof doc.tags === 'string' ? JSON.parse(doc.tags || '[]') : doc.tags || [],
+      metadata: doc.metadata ? JSON.parse(doc.metadata) : null,
+    }));
+  }
+
   async searchDocuments(userId: string, searchTerm: string): Promise<Document[]> {
     if (!this.db) throw new Error('Database not initialized');
 

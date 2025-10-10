@@ -1,6 +1,7 @@
 /**
  * DocumentUploadService - Full implementation for document upload functionality
  * Features: Multi-file selection, progress tracking, duplicate detection, file validation
+ * Now includes camera and gallery integration
  */
 
 import * as DocumentPicker from 'expo-document-picker';
@@ -8,6 +9,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import DatabaseService from '../database/DatabaseService';
 import CryptoJS from 'crypto-js';
+import ImagePickerService, { ImagePickerResult } from './ImagePickerService';
 
 export interface UploadProgress {
   fileId: string;
@@ -88,6 +90,120 @@ class DocumentUploadServiceClass {
       console.error('Error picking documents:', error);
       throw new Error('Failed to pick documents');
     }
+  }
+
+  /**
+   * Take photo using device camera
+   */
+  async takePhoto(): Promise<DocumentPickerResult[]> {
+    try {
+      const images = await ImagePickerService.takePhoto({
+        allowsMultipleSelection: false, // Camera typically supports single photo
+        quality: 0.8, // Good quality for document photos
+        allowsEditing: false // Don't allow editing to preserve document integrity
+      });
+
+      return this.convertImagePickerResults(images);
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      throw new Error('Failed to take photo');
+    }
+  }
+
+  /**
+   * Select images from gallery/photo library
+   */
+  async selectFromGallery(allowMultiple: boolean = true): Promise<DocumentPickerResult[]> {
+    try {
+      const images = await ImagePickerService.selectFromGallery({
+        allowsMultipleSelection: allowMultiple,
+        quality: 1.0, // Full quality for existing photos
+        allowsEditing: false
+      });
+
+      return this.convertImagePickerResults(images);
+    } catch (error) {
+      console.error('Error selecting from gallery:', error);
+      throw new Error('Failed to select from gallery');
+    }
+  }
+
+  /**
+   * Show comprehensive document source selection (Files, Camera, Gallery)
+   */
+  async showDocumentSourceOptions(options?: {
+    allowMultipleFiles?: boolean;
+    allowMultiplePhotos?: boolean;
+  }): Promise<DocumentPickerResult[]> {
+    return new Promise((resolve) => {
+      const allowMultipleFiles = options?.allowMultipleFiles !== false;
+      const allowMultiplePhotos = options?.allowMultiplePhotos !== false;
+
+      // Use React Native Alert for cross-platform action sheet
+      const { Alert } = require('react-native');
+      
+      Alert.alert(
+        'Add Documents',
+        'Choose how you want to add documents to DocsShelf:',
+        [
+          {
+            text: 'Browse Files',
+            onPress: async () => {
+              try {
+                const results = await this.pickDocuments();
+                resolve(results);
+              } catch (error) {
+                console.error('Error picking files:', error);
+                resolve([]);
+              }
+            }
+          },
+          {
+            text: 'Take Photo',
+            onPress: async () => {
+              try {
+                const results = await this.takePhoto();
+                resolve(results);
+              } catch (error) {
+                console.error('Error taking photo:', error);
+                resolve([]);
+              }
+            }
+          },
+          {
+            text: allowMultiplePhotos ? 'Choose from Gallery' : 'Choose Photo',
+            onPress: async () => {
+              try {
+                const results = await this.selectFromGallery(allowMultiplePhotos);
+                resolve(results);
+              } catch (error) {
+                console.error('Error selecting from gallery:', error);
+                resolve([]);
+              }
+            }
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: () => resolve([])
+          }
+        ],
+        { cancelable: true, onDismiss: () => resolve([]) }
+      );
+    });
+  }
+
+  /**
+   * Convert ImagePickerResults to DocumentPickerResults
+   */
+  private convertImagePickerResults(images: ImagePickerResult[]): DocumentPickerResult[] {
+    return images.map(image => ({
+      name: image.name,
+      size: image.size,
+      uri: image.uri,
+      mimeType: image.mimeType,
+      type: image.type,
+    }));
   }
 
   /**
